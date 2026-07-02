@@ -1,0 +1,216 @@
+---
+title: "Testing the DailyNews Frontend with Jest and React Testing Library"
+sidebarTitle: "Testing"
+description: "DailyNews frontend tests cover components using Jest and React Testing Library, with jsdom environment and module mocks for assets and API calls."
+---
+
+The DailyNews frontend test suite uses **Jest 29** with **React Testing Library (RTL)** and **ts-jest** to compile TypeScript on the fly. Tests run in a `jsdom` environment that simulates a browser DOM without a real browser. The five test files in `src/test/` cover the main page components and the `MultiTool` UI primitive, asserting on rendered text, DOM roles, element attributes, navigation behaviour, and form validation. The `useFeedManagement` hook is mocked in every test that touches data-fetching, keeping tests fast and deterministic.
+
+---
+
+## Test Structure
+
+<Accordion title="NewsHome.test.tsx — hero content and list mounting">
+  Tests that `NewsHome` renders the welcome heading and the tagline paragraph, and that the `<NewsList>` component produces a `list` ARIA role. `useFeedManagement` is mocked to return an empty feed list so no real HTTP requests are made.
+
+  **Assertions covered:**
+  - "Welcome to your main feed of news" heading is in the document
+  - Tagline paragraph is in the document
+  - A `role="list"` element is present
+</Accordion>
+
+<Accordion title="NewsList.test.tsx — feed card rendering and attributes">
+  Mocks `useFeedManagement` with two pre-built feed objects and asserts that titles, descriptions, authors, link `href` attributes, and image `src` attributes are correctly rendered.
+
+  **Assertions covered:**
+  - Both feed titles, descriptions, and authors appear in the DOM
+  - Each card `<a>` element has the correct `href` from `feed.link`
+  - Each `<img>` element has the correct `src` from `feed.portrait`
+</Accordion>
+
+<Accordion title="NewsDetail.test.tsx — form rendering, validation, and submission">
+  Mocks both `useFeedManagement` and `useParams` (to return `{ id: '1' }` so the form renders in edit mode). Also mocks the global `fetch` API with `jest.fn()`.
+
+  **Assertions covered:**
+  - Title and Link labelled inputs are present
+  - Submitting an empty form shows "Title is required" and "Link is required" validation messages
+  - Submitting a form with valid `feedData` calls `updateFeed` with the correct arguments
+  - Toast notification mechanism is exercised via `ToastProvider`
+</Accordion>
+
+<Accordion title="NotFound.test.tsx — 404 page content">
+  Renders `NotFound` inside a `BrowserRouter` with a wildcard `Route`. Asserts that all three expected UI elements appear.
+
+  **Assertions covered:**
+  - "404" heading is in the document
+  - Error message paragraph is in the document
+  - "Go Home" link with `role="link"` is in the document
+</Accordion>
+
+<Accordion title="MultiTool.test.tsx — floating action button behaviour">
+  Uses `queryByAttribute` to locate elements by `id` rather than by text or role (since the buttons contain only SVG icons). Tests dark-mode toggling via class mutation on `document.body` and navigation to `/add`.
+
+  **Assertions covered:**
+  - `#add-button` and `#dark-mode-button` elements are in the document
+  - Clicking `#dark-mode-button` adds `dark` to `document.body.classList`
+  - Clicking it again removes `dark`
+  - Clicking `#add-button` sets `window.location.pathname` to `/add`
+</Accordion>
+
+---
+
+## Running Tests
+
+<CodeGroup>
+
+```bash Run all tests once
+npm run test
+```
+
+```bash Watch mode — re-run on file changes
+npm run watch
+```
+
+</CodeGroup>
+
+---
+
+## Jest Configuration
+
+The project uses a CommonJS Jest config file so it can be loaded without the ES module pipeline.
+
+```javascript
+// jest.config.cjs
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'jest-environment-jsdom',
+  transform: {
+    '^.+\\.tsx?$': 'ts-jest',
+  },
+  moduleNameMapper: {
+    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+    '\\.(gif|ttf|eot|svg|png)$': '<rootDir>/src/test/__mocks__/fileMock.js',
+  },
+  setupFilesAfterEnv: ['<rootDir>/src/setupTests.ts'],
+};
+```
+
+**Key settings explained:**
+
+| Setting | Value | Purpose |
+|---|---|---|
+| `preset` | `ts-jest` | Compiles TypeScript files using `ts-jest` instead of Babel |
+| `testEnvironment` | `jest-environment-jsdom` | Provides a full DOM API (window, document, fetch stubs) inside Node.js |
+| `transform` | `ts-jest` for `.ts`/`.tsx` | Ensures TypeScript is compiled on every test run |
+| `moduleNameMapper` (CSS) | `identity-obj-proxy` | Returns the class name string for CSS Module imports so they don't crash |
+| `moduleNameMapper` (assets) | `fileMock.js` | Returns a stub string for image and font imports |
+| `setupFilesAfterEnv` | `setupTests.ts` | Runs `@testing-library/jest-dom` matchers setup before each test suite |
+
+---
+
+## Test Example
+
+The following test from `NewsList.test.tsx` demonstrates how `useFeedManagement` is mocked, how the component is wrapped in the required providers, and how RTL queries assert on rendered feed data:
+
+```tsx
+// src/test/NewsList.test.tsx (excerpt)
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
+import { ToastProvider } from '../context/ToastContext';
+import useFeedManagement from '../customHooks/useFeedManagement';
+import NewsList from '../components/NewsList';
+
+jest.mock('../customHooks/useFeedManagement');
+
+const mockUseFeedManagement = useFeedManagement as jest.MockedFunction<
+  typeof useFeedManagement
+>;
+
+describe('NewsList', () => {
+  beforeEach(() => {
+    mockUseFeedManagement.mockReturnValue({
+      getFeedById: jest.fn(),
+      feedData: { _id: null, title: '', description: '', author: '', link: '', portrait: '', newsletter: '' },
+      setFeedData: jest.fn(),
+      updateFeed: jest.fn(),
+      createFeed: jest.fn(),
+      deleteFeed: jest.fn(),
+      getAllFeeds: jest.fn(),
+      searchFeedsByTitle: jest.fn(),
+      feeds: [
+        {
+          _id: '1',
+          title: 'Test Title 1',
+          description: 'Test Description 1',
+          author: 'Test Author 1',
+          link: 'https://example.com/1',
+          portrait: 'https://example.com/image1.jpg',
+          newsletter: 'Test Newsletter 1',
+        },
+        {
+          _id: '2',
+          title: 'Test Title 2',
+          description: 'Test Description 2',
+          author: 'Test Author 2',
+          link: 'https://example.com/2',
+          portrait: 'https://example.com/image2.jpg',
+          newsletter: 'Test Newsletter 2',
+        },
+      ],
+      loading: false,
+      error: null,
+    });
+  });
+
+  test('renders links with correct href', () => {
+    render(
+      <BrowserRouter>
+        <ToastProvider>
+          <NewsList />
+        </ToastProvider>
+      </BrowserRouter>
+    );
+
+    const links = screen.getAllByRole('link');
+    expect(links[0]).toHaveAttribute('href', 'https://example.com/1');
+    expect(links[1]).toHaveAttribute('href', 'https://example.com/2');
+  });
+});
+```
+
+---
+
+## Mocking
+
+**Mocking `fetch`**
+
+Tests that exercise code paths calling `fetch` (such as `NewsDetail.test.tsx`) replace the global with a Jest mock function in a `beforeAll` block:
+
+```typescript
+beforeAll(() => {
+  global.fetch = jest.fn();
+});
+```
+
+This prevents any real HTTP requests from leaving the test environment and allows individual tests to control what `fetch` resolves to via `(global.fetch as jest.Mock).mockResolvedValue(...)`.
+
+**Mocking static assets (`fileMock.js`)**
+
+Vite handles static asset imports natively, but Jest does not. The `moduleNameMapper` in `jest.config.cjs` redirects any import matching `\.(gif|ttf|eot|svg|png)$` to `src/test/__mocks__/fileMock.js`, which exports a simple stub string so icon and image imports don't throw during tests.
+
+**Mocking `useFeedManagement`**
+
+Because `useFeedManagement` calls `useNavigate` and `useToast` internally, mocking it at the module level (`jest.mock('../customHooks/useFeedManagement')`) prevents test files from needing a fully wired-up router and context just to render a component. Each `beforeEach` block calls `mockReturnValue` with a complete mock object that satisfies the hook's return type.
+
+---
+
+<Tip>
+  To run a single test file without executing the full suite, use Jest's `--testPathPattern` flag:
+
+  ```bash
+  npx jest --testPathPattern=NewsList
+  ```
+
+  This matches any test file path containing "NewsList", making it easy to isolate one component's tests during development.
+</Tip>

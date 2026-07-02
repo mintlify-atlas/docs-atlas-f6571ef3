@@ -1,0 +1,139 @@
+---
+title: "Configure the DailyNews Backend Server"
+sidebarTitle: "Configuration"
+description: "Set up environment variables, MongoDB connection, CORS, and Express middleware for the DailyNews backend API running on Node.js and TypeScript."
+---
+
+The DailyNews backend is a Node.js/TypeScript REST API built with Express and MongoDB. It exposes a set of `/feed` endpoints for reading, creating, updating, and deleting news articles, and automatically scrapes the top headlines from El País and El Mundo on every `GET /feed` request. The two key entry points are `src/server.ts` (bootstrap) and `src/app.ts` (Express application factory). This page explains how to configure the environment, wire up the database connection, and understand the middleware stack.
+
+## Environment Variables
+
+The backend reads its runtime configuration from a `.env` file in the project root (loaded via `dotenv`). Create this file before starting the server.
+
+<ParamField body="PORT" type="number" required>
+  The TCP port that the Express server listens on. Example: `3000`.
+</ParamField>
+
+<ParamField body="MONGO_URI" type="string" required>
+  The MongoDB connection string passed to Mongoose's `connect()` call. Supports both local and Atlas URIs. Example: `mongodb://localhost:27017/dailynews`.
+</ParamField>
+
+```bash
+# .env — place this file in the backend/ directory
+PORT=3000
+MONGO_URI=mongodb://localhost:27017/dailynews
+```
+
+<Warning>
+  The `.env` file must never be committed to source control. Make sure it is listed in `.gitignore`. For production deployments, inject these values as real environment variables rather than relying on a `.env` file.
+</Warning>
+
+## Server Bootstrap
+
+`src/server.ts` is the process entry point. It loads environment variables with `dotenv.config()`, establishes the MongoDB connection via `connectDB()`, and only starts the HTTP listener once the database is ready. If the database connection fails, `connectDB()` calls `process.exit(1)` so the server never opens a port without a working database.
+
+```typescript
+import app from './app';
+import { connectDB } from './infrastructure/database/connect';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const PORT = process.env.PORT;
+
+connectDB().then(() => {
+  app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+});
+```
+
+## Express App Setup
+
+`src/app.ts` builds and exports the Express application instance. The middleware stack, in registration order, is:
+
+1. **`express.urlencoded({ extended: true })`** — parses URL-encoded form bodies.
+2. **`express.json()`** — parses JSON request bodies.
+3. **`cors({ origin: '*' })`** — enables cross-origin requests from any origin.
+4. **Global error handler** — a four-argument middleware that catches any errors forwarded via `next(err)` and returns a structured JSON error response with the appropriate HTTP status code.
+5. **Router** — the `router` imported from `api/routes.ts` is mounted at `/`, registering all `/feed` routes.
+
+```typescript
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import express from 'express';
+import { SERVER_STATUS } from './api/apiConstants';
+import router from './api/routes';
+import cors from 'cors';
+
+const app = express();
+
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(cors({ origin: '*' }));
+app.use(
+  (
+    err: any,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    // Error handling
+    res.status(err.status || 500).json({
+      error: {
+        message: err.message,
+        code: SERVER_STATUS.INTERNAL_SERVER_ERROR,
+      },
+      data: null,
+    });
+  }
+);
+
+// Routes
+app.use('/', router);
+
+export default app;
+```
+
+<Warning>
+  CORS is currently configured with `origin: '*'`, which allows requests from **any** domain. This is acceptable during local development but must be restricted to known origins (e.g., your frontend's domain) before deploying to production. Update the `cors()` call in `app.ts` accordingly.
+</Warning>
+
+## MongoDB Connection
+
+`src/infrastructure/database/connect.ts` exports a single async function, `connectDB()`, that uses Mongoose to open a connection to the URI specified in `MONGO_URI`. On success it logs `"MongoDB connected"`. On failure it logs the error and exits the process with code `1`, preventing the server from starting in a broken state.
+
+```typescript
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const mongoURI: string = process.env.MONGO_URI as string;
+
+export const connectDB = async () => {
+  try {
+    await mongoose.connect(mongoURI);
+    console.log('MongoDB connected');
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    process.exit(1);
+  }
+};
+```
+
+## Available npm Scripts
+
+All scripts are defined in `package.json` and run via `npm run <script>`.
+
+| Script | Command | Description |
+|---|---|---|
+| `dev` | `nodemon src/server.ts` | Start the development server with hot-reload via Nodemon |
+| `build` | `tsc` | Compile TypeScript to `dist/` |
+| `start` | `node dist/server.js` | Run the compiled production build |
+| `test` | `jest` | Run the full test suite |
+| `lint` | `eslint src/*.ts` | Lint all TypeScript source files |
+| `lint:fix` | `eslint src/*.ts --fix` | Lint and auto-fix fixable issues |
+| `format` | `prettier --write "src/**/*.{ts,js,json,md}"` | Format all source files with Prettier |
+| `docker:build` | `docker-compose build` | Build Docker images |
+| `docker:up` | `docker-compose up --watch` | Start containers in watch mode |
+| `docker:down` | `docker-compose down` | Stop and remove containers |
+| `docker:restart` | `docker-compose down && docker-compose up --build` | Rebuild and restart all containers |

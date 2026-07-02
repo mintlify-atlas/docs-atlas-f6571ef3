@@ -1,0 +1,120 @@
+---
+title: "DailyNews REST API Overview and Base URL"
+sidebarTitle: "Overview"
+description: "The DailyNews REST API provides six endpoints for creating, reading, updating, deleting, and searching news feed items stored in MongoDB."
+---
+
+The DailyNews REST API is a JSON REST API built with Node.js, Express, and TypeScript, backed by a MongoDB database. It exposes six endpoints for managing news feed items — including live web scraping from El País and El Mundo on every list request. No authentication is required; all endpoints are public and accept and return `application/json`.
+
+## Base URL
+
+```
+http://localhost:3001
+```
+
+The port is configurable via the `PORT` environment variable. All endpoint paths are relative to this base URL.
+
+## Endpoints Summary
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/feed` | List all feeds (triggers live scraping) |
+| `GET` | `/feed/:id` | Retrieve a single feed by MongoDB ObjectId |
+| `POST` | `/feed` | Create a new feed item |
+| `PUT` | `/feed/:id` | Update an existing feed item by ObjectId |
+| `DELETE` | `/feed/:id` | Remove a feed item by ObjectId |
+| `POST` | `/feed/search` | Search feeds by title substring |
+
+## Response Format
+
+Every response — success or error — is wrapped in a consistent JSON envelope.
+
+**Success** responses carry the payload in `data` and set `error` to `null`:
+
+```json
+{
+  "data": { "...": "..." },
+  "error": null
+}
+```
+
+**Error** responses set `data` to `null` and populate `error` with a machine-readable `code` and a human-readable `message`:
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Feed not found"
+  }
+}
+```
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Bad request"
+  }
+}
+```
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "Unexpected error occurred"
+  }
+}
+```
+
+## HTTP Status Codes
+
+| Code | Constant | Description |
+|------|----------|-------------|
+| `200` | `REQUEST_SUCCESSFUL` | The request completed successfully |
+| `204` | `DELETED_SUCCESSFULLY` | The resource was deleted; no content body needed |
+| `400` | `BAD_REQUEST` | The request was malformed or missing required fields |
+| `404` | `NOT_FOUND` | The requested feed item does not exist |
+| `500` | `INTERNAL_SERVER_ERROR` | An unexpected server-side error occurred |
+
+## Error Codes
+
+These are the values of the `SERVER_STATUS` enum used in the `error.code` field, together with their corresponding `SERVER_MESSAGES` strings.
+
+| `error.code` | `error.message` |
+|--------------|-----------------|
+| `INTERNAL_SERVER_ERROR` | `Unexpected error occurred` |
+| `NOT_FOUND` | `Feed not found` |
+| `BAD_REQUEST` | `Bad request` |
+
+The `DELETED` message (`"Feed deleted successfully"`) is returned in the `data` field on a successful `DELETE`, not in the error envelope.
+
+<Note>
+  There is currently no authentication on any endpoint. All six routes are fully public — no API keys, tokens, or session cookies are required.
+</Note>
+
+## Endpoint Pages
+
+<CardGroup cols={2}>
+  <Card title="GET /feed" icon="list" href="/api/get-all-feeds">
+    List all news feeds. Triggers live scraping of El País and El Mundo before returning the combined stored result set.
+  </Card>
+  <Card title="GET /feed/:id" icon="magnifying-glass" href="/api/get-feed-by-id">
+    Retrieve a single news feed item from MongoDB by its ObjectId.
+  </Card>
+  <Card title="POST /feed" icon="plus" href="/api/create-feed">
+    Create a new news feed item. Requires `title` and `link`.
+  </Card>
+  <Card title="PUT /feed/:id" icon="pen-to-square" href="/api/update-feed">
+    Partially update an existing news feed item by ObjectId.
+  </Card>
+  <Card title="DELETE /feed/:id" icon="trash" href="/api/delete-feed">
+    Remove a news feed item from MongoDB by ObjectId.
+  </Card>
+  <Card title="POST /feed/search" icon="search" href="/api/search-feeds">
+    Case-insensitive title substring search across stored feed items.
+  </Card>
+</CardGroup>

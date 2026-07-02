@@ -1,0 +1,178 @@
+---
+title: "Deploy DailyNews with Docker Compose"
+sidebarTitle: "Docker"
+description: "Run DailyNews frontend, backend, and MongoDB in isolated Docker containers using Docker Compose, with persistent MongoDB storage and live volume mounts."
+---
+
+Docker Compose orchestrates the entire DailyNews stack — React/Vite frontend, Node.js/Express backend, and MongoDB — as three coordinated services that start, stop, and communicate with a single command. Each service runs in its own isolated container, with live volume mounts for hot-reloading during development and a named volume to persist your database across restarts.
+
+## Prerequisites
+
+Before running DailyNews with Docker Compose, make sure you have the following installed on your machine:
+
+- **Docker Engine** — [Install Docker](https://docs.docker.com/engine/install/)
+- **Docker Compose** — Included with Docker Desktop; for Linux servers, follow the [standalone install guide](https://docs.docker.com/compose/install/)
+
+Verify your installation:
+
+```bash
+docker --version
+docker compose version
+```
+
+## Services Overview
+
+<CardGroup cols={3}>
+  <Card title="frontend" icon="browser" href="/quickstart">
+    React/Vite application served by `serve`. Exposed on **port 3000** and depends on the `backend` service. The `./frontend` directory is mounted for live development.
+  </Card>
+  <Card title="backend" icon="server" href="/quickstart">
+    Node.js/Express REST API compiled from TypeScript. Exposed on **port 3001**, depends on `mongo`, and reads environment variables from the root `.env` file.
+  </Card>
+  <Card title="mongo" icon="database" href="/quickstart">
+    Official MongoDB image. Exposed on **port 27017** with a named volume `mongo_data` that persists your database between container restarts.
+  </Card>
+</CardGroup>
+
+## docker-compose.yml
+
+The full Compose configuration that wires the three services together:
+
+```yaml
+version: '3'
+services:
+  frontend:
+    build:
+      dockerfile: Dockerfile
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/frontend
+    environment:
+      - VITE_BACKEND_BASE_URI=http://localhost:3001/feed
+    depends_on:
+      - backend
+  backend:
+    build:
+      dockerfile: Dockerfile
+      context: ./backend
+    container_name: backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/backend
+    environment:
+      - PORT=3001
+      - MONGO_URI=mongodb://mongo:27017/feed-db
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+  mongo:
+    image: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+volumes:
+  mongo_data:
+```
+
+## Backend Dockerfile
+
+Located at `backend/Dockerfile`. Installs dependencies, compiles the TypeScript source with `npm run build`, and starts the compiled server via `npm start` (`node dist/server.js`):
+
+```dockerfile
+# Backend
+FROM node:lts AS backend
+WORKDIR /backend
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+EXPOSE 3001
+CMD ["npm", "start"]
+```
+
+## Frontend Dockerfile
+
+Located at `frontend/Dockerfile`. Installs dependencies, installs the `serve` static file server globally, builds the Vite production bundle, and serves the `dist` directory:
+
+```dockerfile
+FROM node:lts as frontend
+WORKDIR /frontend
+COPY package.json .
+RUN npm install
+RUN npm i -g serve
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD [ "serve", "-s", "dist" ]
+```
+
+## Common Commands
+
+<CodeGroup>
+
+```bash Build and Start
+# Build images from source and start all services
+docker-compose up --build
+```
+
+```bash Start (No Rebuild)
+# Start all services using existing images
+docker-compose up
+```
+
+```bash Stop
+# Stop and remove containers (data volume is preserved)
+docker-compose down
+```
+
+```bash Restart Fresh
+# Tear down and rebuild everything from scratch
+docker-compose down && docker-compose up --build
+```
+
+```bash Watch Mode
+# Start with Docker Compose watch (mirrors the docker:up npm script)
+docker-compose up --watch
+```
+
+</CodeGroup>
+
+## Volume Mounts
+
+DailyNews uses volume mounts to keep your local source files in sync with the running containers:
+
+- **`./frontend:/frontend`** — Your local `frontend/` directory is mounted into the frontend container at `/frontend`. Any changes to source files are reflected inside the container without a rebuild.
+- **`./backend:/backend`** — Your local `backend/` directory is mounted into the backend container at `/backend`, enabling live restarts when using a file watcher such as `nodemon`.
+- **`mongo_data:/data/db`** — A Docker-managed named volume that stores MongoDB data files. This volume survives `docker-compose down` so your database is never lost between restarts. To wipe the database entirely, run `docker-compose down -v`.
+
+## Accessing the Services
+
+Once the stack is running, the three services are reachable at:
+
+| Service      | URL                                    |
+|--------------|----------------------------------------|
+| Frontend     | http://localhost:3000                  |
+| Backend API  | http://localhost:3001                  |
+| MongoDB      | `mongodb://localhost:27017/feed-db`    |
+
+The backend exposes its feed routes under `/feed` — for example, `GET http://localhost:3001/feed` returns all aggregated news items.
+
+<Warning>
+  The `backend` service uses `env_file: .env` to load the root `.env` file at the project root. If this file does not exist when you run `docker-compose up`, Docker Compose will throw an error. Create the file (it can be empty, or populated with your overrides) before starting the stack. See [Environment Variables](/deployment/environment-variables) for details on what to put inside it.
+</Warning>
+
+<Tip>
+  To tail live logs from the backend container without attaching to all services, run:
+
+  ```bash
+  docker-compose logs -f backend
+  ```
+
+  This is especially useful when debugging MongoDB connection issues or inspecting incoming API requests.
+</Tip>

@@ -1,0 +1,321 @@
+---
+title: "DailyNews React Components Reference"
+sidebarTitle: "Components"
+description: "Reference for all DailyNews React components: NewsHome, NewsList, NewsDetail, NewsSearch, Header, MultiTool, Modal, Toast, and NotFound."
+---
+
+The DailyNews component library is divided into two layers. Page-level **smart components** live in `src/components/` — they own data-fetching logic, call custom hooks, and compose the full page layout. Reusable **UI primitives** live in `src/ui/` — they are stateless or lightly stateful, accept explicit props, and can be dropped into any page without side effects. Both layers are written in TypeScript and styled exclusively with Tailwind CSS utility classes.
+
+---
+
+## NewsHome
+
+`NewsHome` is the landing page component rendered at the `/` route. It displays a hero section with the application tagline and then mounts `<NewsList />` inside an unordered list element so screen readers and assistive tools can traverse the feed as a semantic list.
+
+**Props:** none — `NewsHome` is a leaf route component with no external props.
+
+```tsx
+// src/components/NewsHome.tsx
+import React from 'react';
+import NewsList from './NewsList';
+
+const NewsHome: React.FC = () => {
+  return (
+    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+      <div className="space-y-2 pb-8 md:space-y-5">
+        <h1 className="text-3xl font-extrabold leading-9 tracking-tight text-gray-900 dark:text-gray-100 sm:text-4xl sm:leading-10 md:text-6xl md:leading-14">
+          Welcome to your main feed of news
+        </h1>
+        <p className="text-lg leading-7 text-gray-500 dark:text-gray-400">
+          Stop wasting time searching for news. Get all the news you need in one!
+        </p>
+      </div>
+      <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+        <NewsList />
+      </ul>
+    </div>
+  );
+};
+```
+
+---
+
+## NewsList
+
+`NewsList` is the core feed component. On mount it calls `getAllFeeds()` from `useFeedManagement` to populate the feed. Each item renders as a clickable card that opens the article in a new tab. Edit and delete action buttons appear on hover. Deleting a feed first opens a `<Modal>` for confirmation. The search bar at the top is powered by `<NewsSearch>`, which drives `searchFeedsByTitle` via a 500 ms debounce.
+
+**Props:** none — all data is fetched internally via `useFeedManagement`.
+
+**Behaviour summary:**
+
+| Interaction | Result |
+|---|---|
+| Click feed card | Opens `feed.link` in a new tab |
+| Click edit icon | Navigates to `/new/:id` |
+| Click delete icon | Opens delete confirmation `<Modal>` |
+| Confirm delete | Calls `deleteFeed(id)`, removes item from state |
+| Type in search box | Calls `searchFeedsByTitle` after 500 ms debounce |
+
+```tsx
+// Usage — rendered automatically by NewsHome
+import NewsList from './NewsList';
+
+<ul className="divide-y divide-gray-200 dark:divide-gray-700">
+  <NewsList />
+</ul>
+```
+
+<Note>
+  When the `feeds` array is empty and `loading` is `false`, `NewsList` renders a "No feeds found, try another search" message. While `loading` is `true` it renders a "Loading…" placeholder instead.
+</Note>
+
+---
+
+## NewsSearch
+
+`NewsSearch` is a controlled text input that debounces user keystrokes before triggering a search. It holds an internal `searchValue` state, passes it through `useDebounce` with a 500 ms delay, and fires the `onSearch` callback only after the debounced value settles — preventing an API request on every keystroke.
+
+**Props:**
+
+<ParamField body="onSearch" type="(title: string | null) => void" required>
+  Callback invoked with the debounced search string. Receives `null` on first render (before the user types anything).
+</ParamField>
+
+```tsx
+// src/components/NewsSearch.tsx
+import React, { useEffect, useState } from 'react';
+import useDebounce from '../customHooks/useDebounce';
+
+interface NewsSearchProps {
+  onSearch: (title: string | null) => void;
+}
+
+const NewsSearch: React.FC<NewsSearchProps> = ({ onSearch }) => {
+  const [searchValue, setSearchValue] = useState<string | null>(null);
+  const debounceValue = useDebounce(searchValue, 500);
+
+  useEffect(() => {
+    onSearch(debounceValue);
+  }, [debounceValue]);
+
+  return (
+    <input
+      type="text"
+      placeholder="Search by title!"
+      value={searchValue ?? ''}
+      onChange={(e) => setSearchValue(e.target.value)}
+    />
+  );
+};
+```
+
+---
+
+## NewsDetail
+
+`NewsDetail` serves double duty as both the **create** (`/add`) and **edit** (`/new/:id`) form for a feed item. It reads the optional `:id` route param via `useParams`; when an `id` is present it fetches the existing feed with `getFeedById` on mount. On submit it validates that `title` and `link` are non-empty, then either calls `updateFeed` directly (edit mode) or opens a confirmation `<Modal>` before calling `createFeed` (create mode). After a successful creation, `useFeedManagement` navigates back to `/` after a 1-second delay.
+
+**Props:** none — routing context supplies the `id` param.
+
+**Form fields:**
+
+| Field | Required | Notes |
+|---|---|---|
+| Title | ✅ | Validated on submit |
+| Description | ❌ | Free-text textarea |
+| Link | ✅ | Validated on submit |
+| Newsletter | ❌ | Name of the source newsletter |
+| Author | ❌ | Author's name |
+| Portrait image | ❌ | Full image URL; previewed live in the right panel |
+
+```tsx
+// Illustrative usage — mounted by React Router at /add and /new/:id
+import NewsDetail from './NewsDetail';
+
+// In main.tsx:
+<Route path="/new/:id" element={<NewsDetail />} />
+<Route path="/add"     element={<NewsDetail />} />
+```
+
+<Tip>
+  The portrait image field includes a live preview panel on the right side of the form. If the URL is invalid or empty, a landscape placeholder SVG is shown via an `onError` fallback.
+</Tip>
+
+---
+
+## NotFound
+
+`NotFound` is the 404 catch-all rendered for any route that doesn't match the defined paths. It displays a large "404" heading, a descriptive message, and a "Go Home" link button that navigates back to `/`.
+
+**Props:** none.
+
+```tsx
+// src/components/NotFound.tsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const NotFound: React.FC = () => {
+  return (
+    <div className="flex items-center justify-center mt-8">
+      <div className="text-center">
+        <h1>404</h1>
+        <p>Oops! The page you are looking for does not exist.</p>
+        <Link to="/">Go Home</Link>
+      </div>
+    </div>
+  );
+};
+```
+
+---
+
+## Header
+
+`Header` is the persistent site header rendered outside the `<Routes>` block in `main.tsx`, so it appears on every page. It displays the `<LogoIcon>` SVG alongside the "Daily News" brand name. Clicking either the icon or the text navigates to `/` via `useNavigate`.
+
+**Props:** none.
+
+```tsx
+// src/ui/Header.tsx
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import LogoIcon from '../icons/LogoIcon';
+
+const Header = () => {
+  const navigate = useNavigate();
+
+  return (
+    <header className="flex items-center w-full justify-between py-10">
+      <div
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => navigate('/')}
+      >
+        <div className="mr-3">
+          <LogoIcon />
+        </div>
+        <div className="hidden h-6 text-2xl font-semibold sm:block text-red-400 hover:text-red-500">
+          Daily News
+        </div>
+      </div>
+    </header>
+  );
+};
+```
+
+---
+
+## MultiTool
+
+`MultiTool` is a fixed floating action button docked to the bottom-right corner of every page. On hover it expands to reveal two action buttons: one to navigate to `/add` (create a new feed) and one to toggle dark mode. The dark-mode button switches between a `<MoonIcon>` and a `<SunIcon>` to reflect the current mode. Mode state is managed with a local `dark` boolean that mirrors `document.body.classList`.
+
+**Props:** none.
+
+**Button IDs (used in tests):**
+
+| `id` | Action |
+|---|---|
+| `add-button` | Navigates to `/add` |
+| `dark-mode-button` | Toggles `dark` class on `document.body` |
+
+```tsx
+// src/ui/MultiTool.tsx (simplified)
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+const MultiTool: React.FC = () => {
+  const navigate = useNavigate();
+  const [dark, setDark] = useState(false);
+
+  const darkModeHandler = () => {
+    setDark(!dark);
+    document.body.classList.toggle('dark');
+  };
+
+  return (
+    <div className="group fixed bottom-4 right-6 ...">
+      {/* Floating trigger icon */}
+      <div id="dark-mode-button" onClick={darkModeHandler}>
+        {dark ? <SunIcon /> : <MoonIcon />}
+      </div>
+      <div id="add-button" onClick={() => navigate('/add')}>
+        <AddIcon />
+      </div>
+    </div>
+  );
+};
+```
+
+---
+
+## Modal
+
+`Modal` is a generic confirmation dialog. When `isOpen` is `true` it renders a centred overlay with a title, a message, and a "Confirm" button. Clicking "Confirm" calls both `onSubmit` and `onClose` so the caller never has to close the modal manually after confirmation. When `isOpen` is `false` the component returns `null` and is removed from the DOM entirely.
+
+**Props:**
+
+<ParamField body="isOpen" type="boolean" required>
+  Controls whether the modal is visible.
+</ParamField>
+
+<ParamField body="onClose" type="() => void" required>
+  Called when the user clicks the ✕ close button or after confirmation.
+</ParamField>
+
+<ParamField body="onSubmit" type="() => void" required>
+  Called when the user clicks "Confirm".
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  Heading text rendered in the modal.
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  Body text describing the action to be confirmed.
+</ParamField>
+
+```tsx
+// Example — delete confirmation in NewsList
+<Modal
+  isOpen={isDeleteModalOpen}
+  onClose={() => setIsDeleteModalOpen(false)}
+  onSubmit={() => deleteFeed(idToDelete)}
+  title="Delete Feed"
+  message="Are you sure you want to delete this feed?"
+/>
+
+// Example — create confirmation in NewsDetail
+<Modal
+  isOpen={isCreateModalOpen}
+  onClose={() => setIsCreateModalOpen(false)}
+  onSubmit={() => createFeed(feedData)}
+  title="Create new Feed"
+  message="You are about to create a new Feed, are you sure?"
+/>
+```
+
+---
+
+## Toast
+
+`Toast` is the notification display component rendered at the app root in `main.tsx`, outside the router. It reads the `toasts` array from `ToastContext` and renders each notification as a fixed banner at the top of the viewport. Notifications slide in with a CSS `fadeIn` animation and fade out automatically after 2.5 seconds (the context auto-removes them from state after 3 seconds).
+
+**Props:** none — driven entirely by `ToastContext`.
+
+**Toast types and colours:**
+
+| `ToastType` | Background |
+|---|---|
+| `SUCCESS` | `bg-green-300` |
+| `ERROR` | `bg-red-300` |
+| `INFO` | `bg-rose-500` |
+
+```tsx
+// Toast is mounted once at the app root — no props needed
+import Toast from './ui/Toast';
+
+// In main.tsx:
+<ToastProvider>
+  ...
+  <Toast />
+</ToastProvider>
+```

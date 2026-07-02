@@ -1,0 +1,101 @@
+---
+title: "POST /feed/search — Search News by Title"
+sidebarTitle: "POST /feed/search"
+description: "POST /feed/search performs a case-insensitive title substring search on stored news feed items and returns the matching array."
+---
+
+`POST /feed/search` searches stored news feed items by title and returns every document whose `title` field contains the given substring. The match is case-insensitive and implemented as a MongoDB `$regex` query (`new RegExp(searchValue, 'i')`), so partial matches are returned — searching for `"mad"` will match `"Madrid"`, `"Madrigal"`, and `"Real Madrid"`. Results are sorted by `createdAt` descending. This endpoint searches only documents already stored in MongoDB; it does not trigger a live scrape.
+
+## Endpoint
+
+```
+POST /feed/search
+```
+
+## Request Body
+
+Send a JSON body with `Content-Type: application/json`.
+
+<ParamField body="searchValue" type="string" required>
+  The title substring to search for. The match is case-insensitive. An empty string returns all stored feed items.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="Feed[]">
+  Array of Feed objects whose `title` matches the search substring, sorted by `createdAt` descending. Returns an empty array `[]` when no documents match.
+</ResponseField>
+
+<ResponseField name="error" type="null">
+  Always `null` on a successful `200` response.
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash curl
+curl -X POST http://localhost:3001/feed/search \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{ "searchValue": "Madrid" }'
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "data": [
+    {
+      "_id": "664a1f2e8b3c2a001e4d7f02",
+      "title": "La selección española golea en su debut en la Eurocopa",
+      "description": "España arrancó con una contundente victoria por 3-0 frente a Croacia en el estadio Olímpico de Berlín.",
+      "author": "Carlos Ruiz",
+      "link": "https://www.elmundo.es/deportes/2024-05-20/espana-golea-debut-eurocopa.html",
+      "portrait": "https://e00-elmundo.uecdn.es/assets/multimedia/imagenes/eurocopa-cover.jpg",
+      "newsletter": "El Mundo",
+      "createdAt": "2024-05-20T07:15:10.000Z"
+    },
+    {
+      "_id": "664b1a3c7f2d5e001c9a4b88",
+      "title": "Real Madrid anuncia su nueva plantilla para la temporada 2024-25",
+      "description": "El club blanco ha cerrado los fichajes de verano con tres incorporaciones de primer nivel.",
+      "author": "Pedro Sánchez",
+      "link": "https://www.elmundo.es/deportes/2024-05-19/real-madrid-nueva-plantilla.html",
+      "portrait": "https://e00-elmundo.uecdn.es/assets/multimedia/imagenes/madrid-plantilla.jpg",
+      "newsletter": "El Mundo",
+      "createdAt": "2024-05-19T18:40:05.000Z"
+    }
+  ],
+  "error": null
+}
+```
+
+## Error Responses
+
+**500 — Unexpected server error:**
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "Unexpected error occurred"
+  }
+}
+```
+
+## Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Search completed; matching feeds returned (may be an empty array) |
+| `500` | An unexpected server error occurred |
+
+<Note>
+  This endpoint searches only documents already persisted in MongoDB — both manually created items and previously scraped articles. It does **not** trigger a live scrape. To fetch the latest articles from El País and El Mundo before searching, call `GET /feed` first to refresh the stored dataset.
+</Note>
+
+<Tip>
+  The DailyNews frontend calls this endpoint with a 500 ms debounce implemented via a `useDebounce` hook. This prevents a search request from being fired on every keystroke in the search input, reducing unnecessary database queries while keeping the UI feel responsive.
+</Tip>

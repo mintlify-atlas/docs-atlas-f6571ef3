@@ -1,0 +1,257 @@
+---
+title: "DailyNews Architecture and Domain-Driven Design"
+sidebarTitle: "Architecture"
+description: "DailyNews follows Domain-Driven Design with three layers: domain (entities), application (services), and infrastructure (repositories, scrapers, database)."
+---
+
+DailyNews adopts **Domain-Driven Design (DDD)** to keep the codebase maintainable, testable, and easy to extend. DDD separates concerns into three concentric layers — domain, application, and infrastructure — so that business rules never depend on database drivers or HTTP libraries, and external dependencies (scrapers, databases) can be swapped without touching the core logic. This also means each layer can be unit-tested in isolation: domain models have zero external imports, services can be tested with mock repositories, and infrastructure implementations are covered by integration tests.
+
+## Three-Layer Architecture
+
+<CardGroup cols={3}>
+  <Card
+    title="Domain"
+    icon="layer-group"
+    href="#domain-layer"
+  >
+    Defines what a news item *is*. Contains the `Feed` interface and `FeedDTO` class. No framework imports, no database drivers — pure TypeScript.
+  </Card>
+  <Card
+    title="Application"
+    icon="gear"
+    href="#application-layer"
+  >
+    Defines what the system *does*. `FeedService` orchestrates CRUD and scraping. `ScrapperService` delegates to a pluggable scraper implementation.
+  </Card>
+  <Card
+    title="Infrastructure"
+    icon="database"
+    href="#infrastructure-layer"
+  >
+    Defines *how* things are stored and fetched. `FeedRepository` talks to MongoDB via Mongoose. `ElPaisScrapperRepository` and `ElMundoScrapperRepository` parse HTML with Cheerio.
+  </Card>
+</CardGroup>
+
+### Domain Layer
+
+**Path:** `backend/src/domain/model/`
+
+The domain layer is the innermost ring. It contains the `Feed` interface — the canonical shape of a news item across the entire application — and `FeedDTO`, a plain class that constructs and serialises that shape. Neither file imports anything outside of TypeScript's standard library.
+
+```typescript
+// backend/src/domain/model/Feed.ts
+
+export interface Feed {
+  title: string;
+  description: string;
+  author: string;
+  link: string;
+  portrait: string | null;
+  newsletter: string;
+  createdAt: Date;
+}
+
+export class FeedDTO implements Feed {
+  title: string;
+  description: string;
+  author: string;
+  link: string;
+  portrait: string | null;
+  newsletter: string;
+  createdAt: Date;
+
+  constructor(
+    title: string,
+    description: string,
+    author: string,
+    link: string,
+    portrait: string | null,
+    newsletter: string
+  ) {
+    this.title = title;
+    this.description = description;
+    this.author = author;
+    this.link = link;
+    this.portrait = portrait;
+    this.newsletter = newsletter;
+    this.createdAt = new Date();
+  }
+
+  toObject(): Feed {
+    return {
+      title: this.title,
+      description: this.description,
+      author: this.author,
+      link: this.link,
+      portrait: this.portrait,
+      newsletter: this.newsletter,
+      createdAt: this.createdAt,
+    };
+  }
+}
+```
+
+### Application Layer
+
+**Path:** `backend/src/application/services/`
+
+The application layer contains the use-case logic. It depends only on the domain model and on **interfaces** defined in the infrastructure layer — never on concrete classes.
+
+**`FeedService`** is the main orchestrator. It receives a `FeedRepositoryInterface` and an array of `ScrapperRepositoryInterface` implementations via its constructor. When `getAllFeeds()` is called, it iterates every registered scraper, collects results, persists them, and returns the full combined feed:
+
+```typescript
+// backend/src/application/services/FeedService.ts (excerpt)
+
+export class FeedService {
+  constructor(
+    private feedRepository: FeedRepositoryInterface,
+    private scrappers: ScrapperRepositoryInterface[]
+  ) {}
+
+  async getAllFeeds(): Promise<Feed[]> {
+    const scrappedFeeds: Feed[] = [];
+
+    for (const scrapper of this.scrappers) {
+      const scrapperService = new ScrapperService(scrapper);
+      const justScrappedFeeds = await scrapperService.getTopNews();
+      scrappedFeeds.push(...justScrappedFeeds);
+    }
+
+    await this.feedRepository.saveScrappedFeeds(scrappedFeeds);
+    return await this.feedRepository.findAll();
+  }
+  // ... createFeed, getFeedById, searchFeedsByTitle, updateFeed, deleteFeed
+}
+```
+
+**`ScrapperService`** is a thin wrapper that holds a single `ScrapperRepositoryInterface` and exposes `getTopNews()`. Its sole purpose is to decouple `FeedService` from needing to know how to call a scraper directly:
+
+```typescript
+// backend/src/application/services/ScrapperService.ts
+
+export class ScrapperService {
+  constructor(private scrapperRepository: ScrapperRepositoryInterface) {}
+
+  async getTopNews(): Promise<Feed[]> {
+    const feeds: Feed[] = await this.scrapperRepository.getTopNews();
+    return feeds;
+  }
+}
+```
+
+### Infrastructure Layer
+
+**Path:** `backend/src/infrastructure/`
+
+The infrastructure layer contains every class that talks to the outside world: MongoDB via Mongoose, and newspaper websites via Cheerio.
+
+**`FeedRepository`** implements `FeedRepositoryInterface` using the `FeedODMModel` Mongoose model. `saveScrappedFeeds()` deduplicates by URL before inserting, preventing duplicate articles on repeated scrapes. `findAll()` returns all items sorted newest-first.
+
+**`ElPaisScrapperRepository`** fetches `https://elpais.com/`, loads the HTML with Cheerio, and maps the first five `<article>` elements to `FeedDTO` objects:
+
+```typescript
+// backend/src/infrastructure/repositories/scrapper/elpais/ElPaisScrapperRepository.ts (excerpt)
+
+$('article').each((i, el) => {
+  if (i < feedLimit) {
+    const title: string = $(el).find('h2').text();
+    const author: string = $(el).find('a.c_a_a').first().text();
+    const description: string = $(el).find('p.c_d').text();
+    const link: string = $(el).find('header a').first().attr('href') || '';
+    const portrait: string =
+      $(el).find('img.c_m_e._re.lazyload.a_m-h').attr('src') ||
+      $(el).find('img').attr('src') ||
+      '';
+    // ...
+  }
+});
+```
+
+**`ElMundoScrapperRepository`** fetches `https://elmundo.es/` and applies the same pattern with El Mundo's specific CSS selectors. It additionally skips articles that have no `link`, since those represent video-only cards without a full article page.
+
+## Request Flow
+
+Here is exactly what happens when a client calls `GET /feed`:
+
+<Steps>
+  <Step title="Express router dispatches to the controller">
+    `backend/src/api/routes.ts` maps `GET /feed` to the `getAllFeeds` controller function in `feedController.ts`. Express parses the request and passes `req`/`res` to the handler.
+  </Step>
+
+  <Step title="Controller calls FeedService.getAllFeeds()">
+    The controller instantiates (or resolves) a `FeedService` wired with a `FeedRepository` and both scraper implementations, then calls `feedService.getAllFeeds()` and awaits the result.
+  </Step>
+
+  <Step title="FeedService iterates registered scrapers">
+    Inside `getAllFeeds()`, `FeedService` loops over `this.scrappers` — `[ElPaisScrapperRepository, ElMundoScrapperRepository]`. For each one it creates a `ScrapperService` instance and calls `scrapperService.getTopNews()`, collecting up to 5 articles per source (10 total).
+  </Step>
+
+  <Step title="Scrapped feeds are deduplicated and persisted">
+    `feedRepository.saveScrappedFeeds(scrappedFeeds)` checks MongoDB for existing documents with matching `link` values. Only genuinely new articles are inserted with `FeedModel.insertMany()`, ensuring idempotent scraping.
+  </Step>
+
+  <Step title="FeedRepository returns the full combined feed">
+    `feedRepository.findAll()` queries the entire collection sorted by `createdAt` descending, returning both scraped articles and any manually created items in a single array. The controller serialises this as a JSON response to the client.
+  </Step>
+</Steps>
+
+## Dependency Injection
+
+Scrapers and the feed repository are injected into `FeedService` through its constructor, not instantiated inside it:
+
+```typescript
+new FeedService(
+  new FeedRepository(),
+  [
+    new ElPaisScrapperRepository(),
+    new ElMundoScrapperRepository(),
+  ]
+)
+```
+
+This means:
+
+- **Swappable scrapers** — removing El Mundo or adding a new source is a one-line change at the composition root.
+- **Testable services** — unit tests can pass in-memory mock implementations of both interfaces without touching the database or the network.
+- **Open/Closed Principle** — `FeedService` is open for extension (add scrapers) and closed for modification.
+
+## Extension Points: Interfaces
+
+Two interfaces define the contracts that all implementations must satisfy.
+
+**`FeedRepositoryInterface`** (`backend/src/infrastructure/repositories/feed/FeedRepositoryInterface.ts`) declares the full CRUD surface: `findAll`, `findById`, `findByTitle`, `create`, `update`, `delete`, and `saveScrappedFeeds`.
+
+**`ScrapperRepositoryInterface`** (`backend/src/infrastructure/repositories/scrapper/ScrapperRepositoryInterface.ts`) is intentionally minimal — a single method:
+
+```typescript
+// backend/src/infrastructure/repositories/scrapper/ScrapperRepositoryInterface.ts
+
+import { Feed } from '../../../domain/model/Feed';
+
+export interface ScrapperRepositoryInterface {
+  getTopNews(): Promise<Feed[]>;
+}
+```
+
+Any class that implements `getTopNews(): Promise<Feed[]>` can be plugged straight into `FeedService` as a new news source.
+
+<Tip>
+  **Adding a new news source** is a three-step process:
+
+  1. Create a new file, e.g. `backend/src/infrastructure/repositories/scrapper/abc/AbcScrapperRepository.ts`.
+  2. Implement `ScrapperRepositoryInterface` — write the `getTopNews()` method using Cheerio or any fetch strategy you prefer.
+  3. Pass an instance to `FeedService` alongside the existing scrapers at your composition root:
+
+  ```typescript
+  new FeedService(
+    new FeedRepository(),
+    [
+      new ElPaisScrapperRepository(),
+      new ElMundoScrapperRepository(),
+      new AbcScrapperRepository(), // 👈 new source
+    ]
+  )
+  ```
+
+  No other code needs to change.
+</Tip>

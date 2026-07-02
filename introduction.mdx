@@ -1,0 +1,116 @@
+---
+title: "DailyNews: Full-Stack Spanish News Aggregator"
+sidebarTitle: "Introduction"
+description: "DailyNews aggregates the top 5 headlines from El País and El Mundo via web scraping, with a full CRUD REST API and React frontend for managing custom news items."
+---
+
+DailyNews is a full-stack news aggregator that automatically scrapes the top five latest headlines from two of Spain's most-read newspapers — **El País** and **El Mundo** — and delivers them through a clean REST API. Beyond automated scraping, it gives you full CRUD control over a MongoDB-backed feed, letting you create, read, update, and delete custom news items alongside the scraped ones. Whether you're a developer exploring Domain-Driven Design in a real-world Node.js project, or looking for a reference architecture for a React + Express + MongoDB stack, DailyNews is designed to be readable, testable, and ready to extend.
+
+## What You Get
+
+<CardGroup cols={2}>
+  <Card
+    title="Automated Web Scraping"
+    icon="newspaper"
+    href="/architecture"
+  >
+    On every `GET /feed` request, Cheerio scrapes the top 5 articles from El País (`elpais.com`) and El Mundo (`elmundo.es`) in real time — no cron jobs or background workers required.
+  </Card>
+  <Card
+    title="Full CRUD REST API"
+    icon="server"
+    href="/quickstart"
+  >
+    Express routes cover every operation: list all feeds, get by ID, create, update by ID, delete by ID, and search by title. All responses are JSON.
+  </Card>
+  <Card
+    title="React Frontend"
+    icon="browser"
+    href="/quickstart"
+  >
+    A Vite-powered React app connects to the API and provides an interactive UI for browsing scraped news and managing custom items, styled with Tailwind CSS.
+  </Card>
+  <Card
+    title="One-Command Docker Deployment"
+    icon="docker"
+    href="/quickstart"
+  >
+    A single `docker-compose up --build` spins up the frontend (port 3000), backend (port 3001), and a MongoDB container — fully wired together with no manual setup.
+  </Card>
+</CardGroup>
+
+## Tech Stack
+
+### Backend
+
+| Technology | Role |
+|---|---|
+| **Node.js + TypeScript** | Runtime and type-safe application code |
+| **Express** | HTTP server and routing (`src/app.ts`, `src/api/routes.ts`) |
+| **Mongoose** | ODM for MongoDB — schema definition and database queries |
+| **Cheerio** | Server-side HTML parsing for scraping El País and El Mundo |
+| **dotenv** | Environment variable loading (`PORT`, `MONGO_URI`) |
+| **Jest + SuperTest** | Unit and integration (API-level) testing |
+| **ESLint + Prettier** | Code quality and consistent formatting |
+
+### Frontend
+
+| Technology | Role |
+|---|---|
+| **React 18 + TypeScript** | Component-based UI with strong typing |
+| **Vite** | Fast dev server with hot module replacement and optimised production builds |
+| **React Router DOM** | Client-side routing between views |
+| **Tailwind CSS** | Utility-first styling — no component library dependencies |
+| **Jest + React Testing Library** | Component unit tests in a jsdom environment |
+| **ESLint + Prettier** | Code quality and consistent formatting |
+
+## Project Structure
+
+The repository is split into three top-level concerns: the Express backend, the React frontend, and the Docker Compose file that ties them together with MongoDB.
+
+```
+DailyNews/
+├── backend/
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── controllers/       # Express request handlers (feedController)
+│   │   │   ├── routes.ts          # Route definitions (GET/POST/PUT/DELETE /feed)
+│   │   │   └── apiConstants.ts    # Shared HTTP status constants
+│   │   ├── application/
+│   │   │   └── services/
+│   │   │       ├── FeedService.ts      # Orchestrates CRUD + scraping
+│   │   │       └── ScrapperService.ts  # Delegates to a scrapper implementation
+│   │   ├── domain/
+│   │   │   └── model/
+│   │   │       └── Feed.ts        # Feed interface + FeedDTO class
+│   │   ├── infrastructure/
+│   │   │   ├── database/
+│   │   │   │   └── connect.ts     # Mongoose connection helper
+│   │   │   └── repositories/
+│   │   │       ├── feed/
+│   │   │       │   ├── FeedRepository.ts          # Mongoose implementation
+│   │   │       │   ├── FeedRepositoryInterface.ts # CRUD contract
+│   │   │       │   └── FeedODMModel.ts            # Mongoose schema/model
+│   │   │       └── scrapper/
+│   │   │           ├── ScrapperRepositoryInterface.ts
+│   │   │           ├── elpais/
+│   │   │           │   └── ElPaisScrapperRepository.ts
+│   │   │           └── elmundo/
+│   │   │               └── ElMundoScrapperRepository.ts
+│   │   ├── app.ts                 # Express app setup (middleware, CORS, routes)
+│   │   └── server.ts              # Entry point — connects DB then starts server
+│   ├── Dockerfile
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── components/            # Reusable React components
+│   │   ├── pages/                 # Route-level views
+│   │   └── main.tsx               # Vite entry point
+│   ├── Dockerfile
+│   └── package.json
+└── docker-compose.yml
+```
+
+<Note>
+  Scraping runs **automatically on every `GET /feed` request** — there is no scheduled cron job or background worker. Each call to the list endpoint fetches live headlines from El País and El Mundo, deduplicates them by URL against the database, and persists only new articles before returning the full combined feed.
+</Note>

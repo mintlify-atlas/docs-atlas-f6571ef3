@@ -1,0 +1,125 @@
+---
+title: "POST /feed — Create a New News Item"
+sidebarTitle: "POST /feed"
+description: "POST /feed creates a new news feed item in MongoDB. Requires title and link fields; returns the created Feed object."
+---
+
+`POST /feed` creates a new news feed item and persists it to MongoDB. This is the manual creation path — use it to add custom feed entries independently of the automatic scraping pipeline. The controller performs soft validation: if either `title` or `link` is absent from the request body, the server immediately responds with `400 BAD_REQUEST` without touching the database.
+
+## Endpoint
+
+```
+POST /feed
+```
+
+## Request Body
+
+Send a JSON body with `Content-Type: application/json`.
+
+<ParamField body="title" type="string" required>
+  Headline or title of the news article. Must be a non-empty string.
+</ParamField>
+
+<ParamField body="link" type="string" required>
+  Canonical URL of the original news article. Must be a non-empty string.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Short summary or excerpt of the article. Defaults to an empty string if omitted.
+</ParamField>
+
+<ParamField body="author" type="string">
+  Byline of the article. Defaults to an empty string if omitted.
+</ParamField>
+
+<ParamField body="portrait" type="string | null">
+  URL of the article's cover or thumbnail image. Defaults to an empty string if omitted; may be explicitly set to `null`.
+</ParamField>
+
+<ParamField body="newsletter" type="string">
+  Source identifier or publication name for the feed item. Defaults to an empty string if omitted.
+</ParamField>
+
+## Validation
+
+The controller checks that both `title` and `link` are present and truthy before calling the service layer. If either field is missing or empty, a `400 BAD_REQUEST` response is returned immediately — no database write occurs.
+
+## Response
+
+<ResponseField name="data" type="Feed">
+  The newly created Feed object as persisted in MongoDB, including the server-assigned `_id` and `createdAt` timestamp.
+</ResponseField>
+
+<ResponseField name="error" type="null">
+  Always `null` on a successful `200` response.
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash curl
+curl -X POST http://localhost:3001/feed \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "title": "Nueva exposición en el Museo del Prado",
+    "description": "El Museo del Prado inaugura una retrospectiva dedicada a Goya con más de 150 obras reunidas por primera vez.",
+    "author": "Ana García",
+    "link": "https://www.elpais.com/cultura/2024-05-21/nueva-exposicion-museo-del-prado.html",
+    "portrait": "https://imagenes.elpais.com/resizer/prado-goya-cover.jpg",
+    "newsletter": "El País"
+  }'
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "data": {
+    "_id": "664b3e7f9a1c4b002f5e8c10",
+    "title": "Nueva exposición en el Museo del Prado",
+    "description": "El Museo del Prado inaugura una retrospectiva dedicada a Goya con más de 150 obras reunidas por primera vez.",
+    "author": "Ana García",
+    "link": "https://www.elpais.com/cultura/2024-05-21/nueva-exposicion-museo-del-prado.html",
+    "portrait": "https://imagenes.elpais.com/resizer/prado-goya-cover.jpg",
+    "newsletter": "El País",
+    "createdAt": "2024-05-21T10:02:15.000Z"
+  },
+  "error": null
+}
+```
+
+## Error Responses
+
+**400 — Missing `title` or `link`:**
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Bad request"
+  }
+}
+```
+
+**500 — Unexpected server error:**
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "Unexpected error occurred"
+  }
+}
+```
+
+## Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Feed item created successfully |
+| `400` | `title` or `link` is missing from the request body |
+| `500` | An unexpected server error occurred |

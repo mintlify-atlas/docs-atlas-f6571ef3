@@ -1,0 +1,81 @@
+---
+title: "DELETE /feed/:id — Remove a News Feed Item"
+sidebarTitle: "DELETE /feed/:id"
+description: "DELETE /feed/:id removes a news feed item from MongoDB by ObjectId. Returns 204 with a success message on deletion, or 404 if not found."
+---
+
+`DELETE /feed/:id` permanently removes a news feed item from MongoDB. The server uses `findByIdAndDelete` to atomically locate and remove the document. If the document existed and was deleted, the response carries HTTP `204` with a `"Feed deleted successfully"` confirmation string in `data`. If no document matches the provided `id`, the server returns `404 NOT_FOUND`.
+
+## Endpoint
+
+```
+DELETE /feed/:id
+```
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The MongoDB ObjectId of the feed item to delete (e.g. `664a1f2e8b3c2a001e4d7f01`).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="string">
+  The string `"Feed deleted successfully"` on a successful deletion.
+</ResponseField>
+
+<ResponseField name="error" type="null">
+  Always `null` on a successful `204` response.
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash curl
+curl -X DELETE http://localhost:3001/feed/664a1f2e8b3c2a001e4d7f01 \
+  -H "Accept: application/json"
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "data": "Feed deleted successfully",
+  "error": null
+}
+```
+
+## Error Responses
+
+**404 — Feed item not found:**
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Feed not found"
+  }
+}
+```
+
+**500 — Unexpected server error:**
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "Unexpected error occurred"
+  }
+}
+```
+
+## Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `204` | Feed item deleted successfully |
+| `404` | No feed item exists with the provided ObjectId |
+| `500` | An unexpected server error occurred |

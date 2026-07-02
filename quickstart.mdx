@@ -1,47 +1,207 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get DailyNews Running with Docker Compose"
+sidebarTitle: "Quickstart"
+description: "Clone the DailyNews repo, configure environment variables, and run the full stack — frontend, backend, and MongoDB — with a single Docker Compose command."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This page walks you through getting the entire DailyNews stack — React frontend, Express backend, and MongoDB — running on your machine in roughly five minutes. The recommended path is Docker Compose, which handles every dependency automatically. If you prefer running services directly on your host, there is also a manual setup section at the bottom.
 
 ## Prerequisites
 
-Before you begin, you must have:
+<CardGroup cols={3}>
+  <Card
+    title="Docker + Docker Compose"
+    icon="docker"
+    href="https://docs.docker.com/get-docker/"
+  >
+    Required for the recommended one-command setup. Docker Compose v2 is bundled with Docker Desktop.
+  </Card>
+  <Card
+    title="Node.js (latest LTS)"
+    icon="node-js"
+    href="https://nodejs.org/en/download"
+  >
+    Only needed if you want to run the backend or frontend directly on your host without Docker.
+  </Card>
+  <Card
+    title="Git"
+    icon="code-branch"
+    href="https://git-scm.com/downloads"
+  >
+    Required to clone the repository. Any recent version works.
+  </Card>
+</CardGroup>
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Setup Steps
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone the repository">
+    Clone the DailyNews repository and navigate into the project root:
 
     ```bash
-    npm install your-package
+    git clone git@github.com:miikorz/DailyNews.git
+    cd DailyNews
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Review environment configuration">
+    DailyNews uses two environment files — one for Docker Compose at the project root, and one inside the frontend folder.
+
+    **Root `.env`** (consumed by Docker Compose for the backend service):
 
     ```bash
-    your-cli init
+    # .env — project root
+    PORT=3001
+    MONGO_URI=mongodb://mongo:27017/feed-db
     ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+    Docker Compose also injects these values directly via the `environment` block in `docker-compose.yml`, so the root `.env` acts as an override file for local customisation.
+
+    **`frontend/.env`** (consumed by Vite at build time):
 
     ```bash
-    your-cli start
+    # frontend/.env
+    VITE_BACKEND_BASE_URI=http://localhost:3001/feed
+    ```
+
+    The `VITE_BACKEND_BASE_URI` variable tells the React app where to reach the API. When running via Docker Compose, the default value `http://localhost:3001/feed` is already set in `docker-compose.yml` under the `frontend` service's `environment` block — you only need to change it if you deploy to a different host or port.
+  </Step>
+
+  <Step title="Start the full stack with Docker Compose">
+    From the project root, build images and start all three services (frontend, backend, MongoDB) in one command:
+
+    ```bash
+    docker-compose up --build
+    ```
+
+    Docker Compose will:
+    1. Pull the official `mongo` image and start it on port `27017`.
+    2. Build and start the **backend** container on port `3001`, waiting for MongoDB to be ready.
+    3. Build and start the **frontend** container on port `3000`, waiting for the backend.
+
+    You will see interleaved logs from all three containers. The backend prints `Server is running on port 3001` when it is ready.
+  </Step>
+
+  <Step title="Open the app">
+    Once all containers are running, open these URLs in your browser:
+
+    | Service | URL |
+    |---|---|
+    | **React frontend** | [http://localhost:3000](http://localhost:3000) |
+    | **REST API** | [http://localhost:3001](http://localhost:3001) |
+
+    The frontend automatically connects to the API using the `VITE_BACKEND_BASE_URI` environment variable.
+  </Step>
+
+  <Step title="Make your first API call">
+    With the stack running, hit the `GET /feed` endpoint to trigger a live scrape of El País and El Mundo and retrieve the full feed:
+
+    ```bash
+    curl http://localhost:3001/feed
+    ```
+
+    The response is a JSON array of `Feed` objects. Each item matches the `Feed` interface defined in `backend/src/domain/model/Feed.ts`:
+
+    ```json
+    [
+      {
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "title": "Ejemplo de titular extraído de El País",
+        "description": "Breve descripción del artículo tal como aparece en la portada.",
+        "author": "Nombre Apellido",
+        "link": "https://elpais.com/seccion/2024-01-15/articulo.html",
+        "portrait": "https://imagenes.elpais.com/resizer/abc123.jpg",
+        "newsletter": "El País",
+        "createdAt": "2024-01-15T10:30:00.000Z"
+      },
+      {
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d2",
+        "title": "Titular scrapeado de El Mundo",
+        "description": "",
+        "author": "",
+        "link": "https://www.elmundo.es/seccion/articulo.html",
+        "portrait": null,
+        "newsletter": "El Mundo",
+        "createdAt": "2024-01-15T10:30:00.000Z"
+      }
+    ]
+    ```
+
+    <Note>
+      `portrait` may be `null` for some articles. El País and El Mundo only include images in article cards when the image is present in the listing page's HTML — articles that require navigating to the detail page to load an image will have a `null` or empty portrait.
+    </Note>
+
+    You can also exercise the other endpoints:
+
+    ```bash
+    # Create a custom news item
+    curl -X POST http://localhost:3001/feed \
+      -H "Content-Type: application/json" \
+      -d '{
+        "title": "My Custom News",
+        "description": "A manually added news item.",
+        "author": "Jane Doe",
+        "link": "https://example.com/news/1",
+        "portrait": "https://example.com/image.jpg",
+        "newsletter": "Custom"
+      }'
+
+    # Search by title (case-insensitive, partial match)
+    curl -X POST http://localhost:3001/feed/search \
+      -H "Content-Type: application/json" \
+      -d '{ "searchValue": "Custom" }'
+
+    # Get a single feed by MongoDB ObjectId
+    curl http://localhost:3001/feed/<id>
+
+    # Update a feed by ID
+    curl -X PUT http://localhost:3001/feed/<id> \
+      -H "Content-Type: application/json" \
+      -d '{ "title": "Updated Title" }'
+
+    # Delete a feed by ID
+    curl -X DELETE http://localhost:3001/feed/<id>
     ```
   </Step>
 </Steps>
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+  **Running the test suites** — both backend and frontend ship with Jest. Navigate into the respective folder and run:
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  ```bash
+  # Backend (Jest + SuperTest integration tests)
+  cd backend && npm run test
+
+  # Frontend (Jest + React Testing Library)
+  cd frontend && npm run test
+  ```
 </Tip>
+
+## Running Without Docker
+
+If you want to run the backend and frontend directly on your host — for example to get faster hot-reload iteration — you will need a running MongoDB instance accessible at `mongodb://localhost:27017`.
+
+**Backend:**
+
+```bash
+cd backend
+npm install
+# Set env vars (or create a .env file in the backend folder)
+export PORT=3001
+export MONGO_URI=mongodb://localhost:27017/feed-db
+npm run dev
+```
+
+`npm run dev` uses `nodemon` to watch `src/server.ts` and restart on changes.
+
+**Frontend:**
+
+```bash
+cd frontend
+npm install
+# Ensure the backend URL is set
+echo "VITE_BACKEND_BASE_URI=http://localhost:3001/feed" > .env
+npm run dev
+```
+
+Vite starts on `http://localhost:5173` by default in dev mode (not port 3000, which is the Docker-served production build). Update `VITE_BACKEND_BASE_URI` accordingly if the backend runs on a different address.

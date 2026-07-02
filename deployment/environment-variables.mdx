@@ -1,0 +1,116 @@
+---
+title: "DailyNews Environment Variable Reference"
+sidebarTitle: "Environment Variables"
+description: "All environment variables for the DailyNews backend and frontend, including PORT, MONGO_URI, and VITE_BACKEND_BASE_URI with example values and usage."
+---
+
+DailyNews is configured through two environment variable scopes: backend variables that control the Express server and MongoDB connection, and a frontend variable that tells the Vite app where to reach the API. Backend variables are loaded at runtime by `dotenv` from the root `.env` file (or from Docker Compose's inline `environment:` block), while the frontend variable is embedded into the production bundle at build time by Vite.
+
+## Backend Variables
+
+These variables are consumed by `backend/src/server.ts` (for `PORT`) and `backend/src/infrastructure/database/connect.ts` (for `MONGO_URI`). Both files call `dotenv.config()` and read from `process.env`.
+
+<ParamField body="PORT" type="number" required>
+  The port the Express server binds to. Docker Compose sets this to `3001` via the inline `environment:` block.
+
+  **Example:** `PORT=3001`
+</ParamField>
+
+<ParamField body="MONGO_URI" type="string" required>
+  Full MongoDB connection string passed to `mongoose.connect()`. When running inside Docker Compose, the hostname is the Compose service name `mongo`. For local development outside Docker, point this at your local MongoDB instance.
+
+  **Docker Compose example:** `MONGO_URI=mongodb://mongo:27017/feed-db`
+
+  **Local development example:** `MONGO_URI=mongodb://localhost:27017/feed-db`
+</ParamField>
+
+## Frontend Variables
+
+Vite only exposes variables that are prefixed with `VITE_` to the client-side bundle. These are read at **build time** via `import.meta.env` — not at runtime — so the container must be rebuilt after changing them.
+
+<ParamField body="VITE_BACKEND_BASE_URI" type="string" required>
+  Base URL of the backend feed endpoint. Used by `frontend/src/utils/apiConstants.ts` to construct all API endpoint paths (`getAllFeeds`, `createFeed`, `searchFeedsByTitle`, etc.).
+
+  The `VITE_` prefix is mandatory for Vite to include this variable in the client bundle. Variables without this prefix are stripped from the build and will be `undefined` in the browser.
+
+  **Example:** `VITE_BACKEND_BASE_URI=http://localhost:3001/feed`
+</ParamField>
+
+## Configuration Files
+
+DailyNews reads environment variables from two `.env` files, each consumed by a different layer of the stack:
+
+### Root `.env` (backend)
+
+**Path:** `.env` (project root)
+
+Consumed by the `backend` Docker Compose service via `env_file: .env`. Also loaded directly by `dotenv.config()` inside `server.ts` and `connect.ts` when running outside Docker. The file is currently empty in the repository — values are supplied inline by Docker Compose — but you can add overrides here for local development:
+
+```bash
+# .env (project root)
+PORT=3001
+MONGO_URI=mongodb://localhost:27017/feed-db
+```
+
+### `frontend/.env` (Vite)
+
+**Path:** `frontend/.env`
+
+Consumed by Vite at build time. The repository ships this file with the following content:
+
+```bash
+# frontend/.env
+VITE_BACKEND_BASE_URI=http://localhost:3001/feed
+```
+
+## Docker Compose Inline Environment
+
+In addition to the file-based variables above, `docker-compose.yml` declares environment variables inline under each service's `environment:` key. These values take precedence over the file-based `.env` entries for the running container:
+
+| Service    | Variable                | Value                              |
+|------------|-------------------------|------------------------------------|
+| `backend`  | `PORT`                  | `3001`                             |
+| `backend`  | `MONGO_URI`             | `mongodb://mongo:27017/feed-db`    |
+| `frontend` | `VITE_BACKEND_BASE_URI` | `http://localhost:3001/feed`       |
+
+The `backend` service also uses `env_file: .env` to load the root `.env` file. Any variables set in that file will be available to the container, but variables declared in the inline `environment:` block will override them if there is a conflict.
+
+<Info>
+  The `MONGO_URI` in Docker Compose uses `mongo` as the hostname — the Compose service name. This only resolves correctly inside the Docker network. For local development without Docker, use `localhost` instead.
+</Info>
+
+## Local Development
+
+To run the backend and frontend outside of Docker, create the two `.env` files manually and point them at a locally running MongoDB instance.
+
+### Root `.env`
+
+```bash
+PORT=3001
+MONGO_URI=mongodb://localhost:27017/feed-db
+```
+
+### `frontend/.env`
+
+```bash
+VITE_BACKEND_BASE_URI=http://localhost:3001/feed
+```
+
+Then start MongoDB locally, run the backend with `npm run dev` (uses `nodemon`), and start the frontend dev server with `npm run dev` (uses `vite`) from their respective directories.
+
+<Warning>
+  `frontend/src/utils/apiConstants.ts` currently has the environment variable commented out and the base URL hardcoded:
+
+  ```typescript
+  // const baseUrl = import.meta.env.VITE_BACKEND_BASE_URI;
+  const baseUrl = 'http://localhost:3001/feed';
+  ```
+
+  This means `VITE_BACKEND_BASE_URI` has no effect at runtime — the hardcoded value is always used. For production deployments where the backend is not on `localhost`, update the file to use the environment variable:
+
+  ```typescript
+  const baseUrl = import.meta.env.VITE_BACKEND_BASE_URI;
+  ```
+
+  After making this change, rebuild the frontend image (`docker-compose up --build`) so that Vite bakes the correct value into the production bundle.
+</Warning>

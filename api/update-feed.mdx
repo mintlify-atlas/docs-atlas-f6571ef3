@@ -1,0 +1,123 @@
+---
+title: "PUT /feed/:id — Update a News Feed Item"
+sidebarTitle: "PUT /feed/:id"
+description: "PUT /feed/:id partially updates a news feed item in MongoDB by ObjectId. Only provided fields are updated; returns the updated Feed object."
+---
+
+`PUT /feed/:id` updates an existing news feed item in MongoDB. The update is partial — only the fields included in the request body are written; omitted fields retain their current values. Internally the service calls `findByIdAndUpdate` with the `new: true` option, so the response always reflects the document's state after the update. If no document matches the given `id`, the server responds with `404 NOT_FOUND`.
+
+## Endpoint
+
+```
+PUT /feed/:id
+```
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The MongoDB ObjectId of the feed item to update (e.g. `664a1f2e8b3c2a001e4d7f01`).
+</ParamField>
+
+## Request Body
+
+Send a JSON body with `Content-Type: application/json`. All fields are optional — include only the ones you want to change.
+
+<ParamField body="title" type="string">
+  New headline or title of the news article.
+</ParamField>
+
+<ParamField body="description" type="string">
+  New summary or excerpt of the article.
+</ParamField>
+
+<ParamField body="author" type="string">
+  New byline for the article.
+</ParamField>
+
+<ParamField body="link" type="string">
+  New canonical URL for the article.
+</ParamField>
+
+<ParamField body="portrait" type="string | null">
+  New cover or thumbnail image URL. May be set to `null` to clear the field.
+</ParamField>
+
+<ParamField body="newsletter" type="string">
+  New source identifier or publication name.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="Feed">
+  The Feed object as it exists in MongoDB **after** the update has been applied.
+</ResponseField>
+
+<ResponseField name="error" type="null">
+  Always `null` on a successful `200` response.
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash curl
+curl -X PUT http://localhost:3001/feed/664a1f2e8b3c2a001e4d7f01 \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "title": "El Gobierno aprueba el nuevo plan de vivienda (actualizado)",
+    "description": "Texto actualizado con los últimos detalles del plan de vivienda aprobado por el Consejo de Ministros."
+  }'
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "data": {
+    "_id": "664a1f2e8b3c2a001e4d7f01",
+    "title": "El Gobierno aprueba el nuevo plan de vivienda (actualizado)",
+    "description": "Texto actualizado con los últimos detalles del plan de vivienda aprobado por el Consejo de Ministros.",
+    "author": "María López",
+    "link": "https://www.elpais.com/economia/2024-05-20/el-gobierno-aprueba-nuevo-plan-vivienda.html",
+    "portrait": "https://imagenes.elpais.com/resizer/vivienda-cover.jpg",
+    "newsletter": "El País",
+    "createdAt": "2024-05-20T08:34:22.000Z"
+  },
+  "error": null
+}
+```
+
+## Error Responses
+
+**404 — Feed item not found:**
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Feed not found"
+  }
+}
+```
+
+**500 — Unexpected server error:**
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "Unexpected error occurred"
+  }
+}
+```
+
+## Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Feed item updated and returned successfully |
+| `404` | No feed item exists with the provided ObjectId |
+| `500` | An unexpected server error occurred |

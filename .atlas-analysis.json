@@ -1,0 +1,93 @@
+{
+  "projectType": "saas",
+  "projectName": "DailyNews",
+  "projectDescription": "A full-stack news aggregator that scrapes the top headlines from El País and El Mundo, and provides a React frontend with full CRUD management for custom news items.",
+  "theme": "luma",
+  "primaryColor": "#07baf0",
+  "lightColor": "#5fc9de",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Backend",
+            "pages": [
+              "backend/configuration",
+              "backend/scraping",
+              "backend/data-model",
+              "backend/testing"
+            ]
+          },
+          {
+            "group": "Frontend",
+            "pages": [
+              "frontend/overview",
+              "frontend/components",
+              "frontend/hooks",
+              "frontend/testing"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker",
+              "deployment/environment-variables"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Feed Endpoints",
+            "pages": [
+              "api/overview",
+              "api/get-all-feeds",
+              "api/get-feed-by-id",
+              "api/create-feed",
+              "api/update-feed",
+              "api/delete-feed",
+              "api/search-feeds"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automated web scraping of top 5 headlines from El País and El Mundo on every feed request",
+    "Full CRUD REST API built with Express, TypeScript, and MongoDB",
+    "React 18 frontend with real-time debounced search",
+    "Domain-Driven Design architecture (application, domain, infrastructure layers)",
+    "Dark mode support via Tailwind CSS",
+    "Fully containerized with Docker Compose (frontend + backend + MongoDB)",
+    "Comprehensive test suite with Jest, SuperTest, and React Testing Library"
+  ],
+  "publicApiSurface": [
+    "GET /feed — fetch all feeds (triggers scraping + returns stored items)",
+    "GET /feed/:id — get a single feed by MongoDB ObjectId",
+    "POST /feed — create a new feed item",
+    "PUT /feed/:id — update an existing feed by id",
+    "DELETE /feed/:id — delete a feed by id",
+    "POST /feed/search — search feeds by title substring",
+    "FeedService.getAllFeeds()",
+    "FeedService.createFeed(feedObject)",
+    "FeedService.getFeedById(id)",
+    "FeedService.searchFeedsByTitle(title)",
+    "FeedService.updateFeed(id, feed)",
+    "FeedService.deleteFeed(id)",
+    "ScrapperService.getTopNews()",
+    "useFeedManagement() — React hook exposing getAllFeeds, createFeed, getFeedById, updateFeed, deleteFeed, searchFeedsByTitle"
+  ]
+}

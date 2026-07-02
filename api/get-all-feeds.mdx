@@ -1,0 +1,114 @@
+---
+title: "GET /feed — List All News Feeds"
+sidebarTitle: "GET /feed"
+description: "GET /feed fetches all news feeds from MongoDB, triggering live web scraping of El País and El Mundo before returning the combined result set."
+---
+
+`GET /feed` is the primary listing endpoint for DailyNews. On every call it triggers a live scrape of the top five articles from both El Mundo and El País, deduplicates them against existing records by link, persists any new items, and then returns the full collection sorted by `createdAt` descending. This means the response always reflects the latest news without any separate refresh step.
+
+## Endpoint
+
+```
+GET /feed
+```
+
+## Request
+
+No path parameters, query parameters, request body, or authentication headers are required.
+
+## Response
+
+<ResponseField name="data" type="Feed[]">
+  Array of Feed objects sorted by `createdAt` descending. Empty array `[]` when no feeds exist.
+
+  <Expandable title="Feed object fields">
+    <ResponseField name="_id" type="string">
+      MongoDB-assigned ObjectId string that uniquely identifies this feed item.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Headline or title of the news article.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Short summary or excerpt of the article. Defaults to an empty string if not provided.
+    </ResponseField>
+    <ResponseField name="author" type="string">
+      Byline of the article. Defaults to an empty string if not provided.
+    </ResponseField>
+    <ResponseField name="link" type="string">
+      Canonical URL of the original news article.
+    </ResponseField>
+    <ResponseField name="portrait" type="string | null">
+      URL of the article's cover or thumbnail image. Defaults to an empty string; may be `null`.
+    </ResponseField>
+    <ResponseField name="newsletter" type="string">
+      Source identifier for the feed item (e.g. the scraper or publication name). Defaults to an empty string.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Timestamp at which this record was inserted into MongoDB. Used to sort results newest-first.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="null">
+  Always `null` on a successful response.
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash curl
+curl -X GET http://localhost:3001/feed \
+  -H "Accept: application/json"
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "data": [
+    {
+      "_id": "664a1f2e8b3c2a001e4d7f01",
+      "title": "El Gobierno aprueba el nuevo plan de vivienda",
+      "description": "El Consejo de Ministros ha dado luz verde al paquete de medidas para facilitar el acceso a la vivienda en las grandes ciudades.",
+      "author": "María López",
+      "link": "https://www.elpais.com/economia/2024-05-20/el-gobierno-aprueba-nuevo-plan-vivienda.html",
+      "portrait": "https://imagenes.elpais.com/resizer/vivienda-cover.jpg",
+      "newsletter": "El País",
+      "createdAt": "2024-05-20T08:34:22.000Z"
+    },
+    {
+      "_id": "664a1f2e8b3c2a001e4d7f02",
+      "title": "La selección española golea en su debut en la Eurocopa",
+      "description": "España arrancó con una contundente victoria por 3-0 frente a Croacia en el estadio Olímpico de Berlín.",
+      "author": "Carlos Ruiz",
+      "link": "https://www.elmundo.es/deportes/2024-05-20/espana-golea-debut-eurocopa.html",
+      "portrait": "https://e00-elmundo.uecdn.es/assets/multimedia/imagenes/eurocopa-cover.jpg",
+      "newsletter": "El Mundo",
+      "createdAt": "2024-05-20T07:15:10.000Z"
+    },
+    {
+      "_id": "664a1f2e8b3c2a001e4d7f03",
+      "title": "Récord histórico de temperaturas en la Península",
+      "description": "La Agencia Estatal de Meteorología prevé que varios municipios superen los 42 °C este fin de semana.",
+      "author": "",
+      "link": "https://www.elpais.com/clima/2024-05-20/record-historico-temperaturas-peninsula.html",
+      "portrait": null,
+      "newsletter": "El País",
+      "createdAt": "2024-05-20T06:50:44.000Z"
+    }
+  ],
+  "error": null
+}
+```
+
+## Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Feeds returned successfully |
+| `500` | An unexpected server error occurred; scraping or database failure |
+
+<Note>
+  On every call, the service scrapes the top 5 articles from El Mundo and the top 5 from El País. Each scraped article is compared against existing records by `link`; only articles with a new, unseen link are inserted. The endpoint then returns **all** stored feeds (scraped and manually created), sorted newest-first — not only the freshly scraped batch.
+</Note>

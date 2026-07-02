@@ -1,0 +1,262 @@
+---
+title: "Web Scraping El País and El Mundo with Cheerio"
+sidebarTitle: "Scraping"
+description: "DailyNews scrapes the top 5 headlines from El País and El Mundo on every GET /feed request using Cheerio and the ScrapperRepositoryInterface pattern."
+---
+
+Every time a client calls `GET /feed`, DailyNews automatically fetches the homepages of El País (`https://elpais.com/`) and El Mundo (`https://elmundo.es/`), parses the HTML with [Cheerio](https://cheerio.js.org/), and extracts the top 5 article headlines from each source. The freshly scraped articles are then persisted to MongoDB before the full feed list is returned to the client. Currently two news sources are supported — El País and El Mundo — and new sources can be added by implementing a single interface.
+
+## How Scraping Works
+
+The scraping pipeline is triggered inside `FeedService.getAllFeeds()` and follows a clear chain of responsibility:
+
+<Steps>
+  <Step title="FeedService iterates the scrapers array">
+    `FeedService` is constructed with an array of `ScrapperRepositoryInterface` implementations. On `getAllFeeds()`, it loops over every scraper in that array.
+  </Step>
+  <Step title="ScrapperService wraps each scraper">
+    For each scraper, a new `ScrapperService` instance is created, delegating the actual fetch-and-parse logic to the underlying `ScrapperRepositoryInterface` implementation via `scrapperService.getTopNews()`.
+  </Step>
+  <Step title="Each scraper fetches and parses HTML">
+    The concrete repository class (e.g., `ElPaisScrapperRepository`) calls the native `fetch` API to retrieve the news homepage, then passes the raw HTML to Cheerio. It selects `article` elements and reads CSS-targeted child nodes for the title, author, description, link, and portrait image — stopping after 5 items.
+  </Step>
+  <Step title="Results are accumulated">
+    Scraped `Feed` objects from all sources are pushed into a shared `scrappedFeeds` array.
+  </Step>
+  <Step title="saveScrappedFeeds() persists new items">
+    The accumulated results are passed to `feedRepository.saveScrappedFeeds()`, which deduplicates by `link` before inserting only new articles into MongoDB.
+  </Step>
+  <Step title="findAll() returns the full feed">
+    After saving, `feedRepository.findAll()` is called and its result — the complete persisted feed sorted by `createdAt` descending — is returned to the controller.
+  </Step>
+</Steps>
+
+## ScrapperRepositoryInterface
+
+Every news source must implement this minimal interface. A single async method, `getTopNews()`, is responsible for fetching and returning a list of `Feed` objects.
+
+```typescript
+import { Feed } from '../../../domain/model/Feed';
+
+export interface ScrapperRepositoryInterface {
+  getTopNews(): Promise<Feed[]>;
+}
+```
+
+## El País Scraper
+
+`ElPaisScrapperRepository` fetches `https://elpais.com/` and selects all `article` elements, capping results at 5. It targets the following CSS structure inside each article:
+
+| Field | CSS Selector |
+|---|---|
+| `title` | `h2` (inner text) |
+| `author` | `a.c_a_a` — first anchor with class `c_a_a` |
+| `description` | `p.c_d` |
+| `link` | `header a` — first anchor inside the `<header>` |
+| `portrait` | `img.c_m_e._re.lazyload.a_m-h` › fallback `img` |
+
+```typescript
+import * as cheerio from 'cheerio';
+import { Feed, FeedDTO } from '../../../../domain/model/Feed';
+import { ScrapperRepositoryInterface } from '../ScrapperRepositoryInterface';
+
+const newsletterUrl: string = 'https://elpais.com/';
+const newsletterName: string = 'El País';
+
+export class ElPaisScrapperRepository implements ScrapperRepositoryInterface {
+  async getTopNews(): Promise<Feed[]> {
+    const content: Response = await fetch(newsletterUrl);
+    const body: string = await content.text();
+    const $: cheerio.CheerioAPI = cheerio.load(body);
+    const feedLimit: number = 5;
+    const feeds: Feed[] = [];
+
+    $('article').each((i, el) => {
+      if (i < feedLimit) {
+        const title: string = $(el).find('h2').text();
+        const author: string = $(el).find('a.c_a_a').first().text();
+        const description: string = $(el).find('p.c_d').text();
+        const link: string = $(el).find('header a').first().attr('href') || '';
+        const portrait: string =
+          $(el).find('img.c_m_e._re.lazyload.a_m-h').attr('src') ||
+          $(el).find('img').attr('src') ||
+          '';
+
+        const feed: Feed = new FeedDTO(
+          title,
+          description,
+          author,
+          link,
+          portrait,
+          newsletterName
+        ).toObject();
+        feeds.push(feed);
+      }
+    });
+
+    return feeds;
+  }
+}
+```
+
+## El Mundo Scraper
+
+`ElMundoScrapperRepository` fetches `https://elmundo.es/` with an explicit `Content-Type` header and selects all `article` elements, capping results at 5. Unlike the El País scraper, it uses a manual `feedCount` counter (rather than the Cheerio index `i`) so that articles **without a link are skipped entirely** — those entries are typically video-only cards.
+
+| Field | CSS Selector |
+|---|---|
+| `title` | `h2` (inner text) |
+| `author` | `span.ue-c-cover-content__byline-name` (with `"Redacción: "` prefix stripped) |
+| `description` | `div.ue-c-cover-content__footer` |
+| `link` | `header a` — first anchor inside the `<header>` (skipped if empty) |
+| `portrait` | `img.ue-c-cover-content__image` › fallback `img` |
+
+```typescript
+import * as cheerio from 'cheerio';
+import { Feed, FeedDTO } from '../../../../domain/model/Feed';
+import { ScrapperRepositoryInterface } from '../ScrapperRepositoryInterface';
+
+const newsletterUrl: string = 'https://elmundo.es/';
+const newsletterName: string = 'El Mundo';
+
+export class ElMundoScrapperRepository implements ScrapperRepositoryInterface {
+  async getTopNews(): Promise<Feed[]> {
+    const content: Response = await fetch(newsletterUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+    });
+    const body: string = await content.text();
+    const $: cheerio.CheerioAPI = cheerio.load(body);
+    const feedLimit: number = 5;
+    let feedCount: number = 0;
+    const feeds: Feed[] = [];
+
+    $('article').each((i, el) => {
+      if (feedCount < feedLimit) {
+        const link: string = $(el).find('header a').first().attr('href') || '';
+        // * If there is no link we skip this feed since its only a video or not a full new
+        if (!link) return;
+
+        const title: string = $(el).find('h2').text();
+        const author: string = $(el)
+          .find('span.ue-c-cover-content__byline-name')
+          .text()
+          .replace('Redacci\u{F3}n: ', '');
+        const description: string = $(el)
+          .find('div.ue-c-cover-content__footer')
+          .text();
+        const portrait: string =
+          $(el).find('img.ue-c-cover-content__image').attr('src') ||
+          $(el).find('img').attr('src') ||
+          '';
+
+        const feed: Feed = new FeedDTO(
+          title,
+          description,
+          author,
+          link,
+          portrait,
+          newsletterName
+        ).toObject();
+        feeds.push(feed);
+
+        feedCount++;
+      }
+    });
+
+    return feeds;
+  }
+}
+```
+
+## Adding a New News Source
+
+To add a third news source, implement `ScrapperRepositoryInterface` and register the new class in `feedController.ts`.
+
+<Steps>
+  <Step title="Create the scraper file">
+    Add a new file, for example `src/infrastructure/repositories/scrapper/mynews/MyNewsScrapperRepository.ts`.
+  </Step>
+  <Step title="Implement ScrapperRepositoryInterface">
+    Implement `getTopNews()` to fetch the target URL and parse headlines with Cheerio:
+
+    ```typescript
+    import * as cheerio from 'cheerio';
+    import { Feed, FeedDTO } from '../../../../domain/model/Feed';
+    import { ScrapperRepositoryInterface } from '../ScrapperRepositoryInterface';
+
+    const newsletterUrl: string = 'https://mynewssource.com/';
+    const newsletterName: string = 'My News';
+
+    export class MyNewsScrapperRepository implements ScrapperRepositoryInterface {
+      async getTopNews(): Promise<Feed[]> {
+        const content: Response = await fetch(newsletterUrl);
+        const body: string = await content.text();
+        const $: cheerio.CheerioAPI = cheerio.load(body);
+        const feedLimit: number = 5;
+        const feeds: Feed[] = [];
+
+        $('article').each((i, el) => {
+          if (i < feedLimit) {
+            const title: string = $(el).find('h2').text();
+            const description: string = $(el).find('p.summary').text();
+            const author: string = $(el).find('span.author').text();
+            const link: string = $(el).find('a').first().attr('href') || '';
+            const portrait: string = $(el).find('img').attr('src') || '';
+
+            feeds.push(
+              new FeedDTO(title, description, author, link, portrait, newsletterName).toObject()
+            );
+          }
+        });
+
+        return feeds;
+      }
+    }
+    ```
+  </Step>
+  <Step title="Register the scraper in feedController.ts">
+    Import and add your new class to the `scrappers` array in `src/api/controllers/feedController.ts`:
+
+    ```typescript
+    import { MyNewsScrapperRepository } from '../../infrastructure/repositories/scrapper/mynews/MyNewsScrapperRepository';
+
+    const scrappers: ScrapperRepositoryInterface[] = [
+      new ElMundoScrapperRepository(),
+      new ElPaisScrapperRepository(),
+      new MyNewsScrapperRepository(), // add here
+    ];
+    ```
+  </Step>
+  <Step title="Write tests for the new scraper">
+    Add a test file at `src/tests/MyNewsScrapperRepository.test.ts`, mocking `global.fetch` with representative HTML to verify the parsing logic.
+  </Step>
+</Steps>
+
+## Persistence
+
+After scraping completes, `FeedService.getAllFeeds()` calls `feedRepository.saveScrappedFeeds(scrappedFeeds)`. The repository implementation handles deduplication: it queries MongoDB for any existing documents whose `link` field matches any of the scraped links, builds a `Set` of known links, and then calls `insertMany()` only for items whose links are **not** already in the database. This means repeated `GET /feed` calls will not produce duplicate entries in MongoDB.
+
+```typescript
+async saveScrappedFeeds(feeds: Feed[]): Promise<Feed[]> {
+  const existingFeeds = await FeedModel.find({
+    link: { $in: feeds.map((feed) => feed.link) },
+  }).lean();
+  const existingLinks = new Set(existingFeeds.map((feed) => feed.link));
+  const newFeeds: Feed[] = feeds.filter(
+    (feed) => !existingLinks.has(feed.link)
+  );
+
+  if (newFeeds.length > 0) {
+    await FeedModel.insertMany(newFeeds);
+  }
+
+  return newFeeds;
+}
+```
+
+<Note>
+  Some scraped articles may have an empty `portrait` field. This happens when the news homepage does not include a visible `<img>` tag within the article element — for example, when the hero image is loaded lazily via JavaScript after the initial HTML response. Fetching each article's detail page to retrieve the image would significantly slow down the scraping process and is therefore not implemented.
+</Note>

@@ -1,0 +1,105 @@
+---
+title: "GET /feed/:id — Retrieve a Single News Item"
+sidebarTitle: "GET /feed/:id"
+description: "GET /feed/:id returns a single news feed item from MongoDB by its ObjectId. Returns 404 if the item does not exist."
+---
+
+`GET /feed/:id` retrieves one news feed item from MongoDB using its unique ObjectId. Unlike `GET /feed`, this endpoint does not trigger any scraping — it is a direct database lookup. If no document matches the provided `id`, the server responds with `404` and the `NOT_FOUND` error envelope.
+
+## Endpoint
+
+```
+GET /feed/:id
+```
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The MongoDB ObjectId of the feed item to retrieve (e.g. `664a1f2e8b3c2a001e4d7f01`). Must be a valid 24-character hexadecimal ObjectId string; passing a malformed value results in a `500` response carrying the cast error reason.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="Feed | null">
+  The matching Feed object on success, or `null` when the item is not found.
+
+  <Expandable title="Feed object fields">
+    <ResponseField name="_id" type="string">
+      MongoDB-assigned ObjectId string.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Headline or title of the news article.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Short summary or excerpt of the article. Defaults to an empty string.
+    </ResponseField>
+    <ResponseField name="author" type="string">
+      Byline of the article. Defaults to an empty string.
+    </ResponseField>
+    <ResponseField name="link" type="string">
+      Canonical URL of the original news article.
+    </ResponseField>
+    <ResponseField name="portrait" type="string | null">
+      URL of the article's cover or thumbnail image. May be `null`.
+    </ResponseField>
+    <ResponseField name="newsletter" type="string">
+      Source identifier for the feed item. Defaults to an empty string.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Timestamp at which this record was inserted into MongoDB.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="null">
+  Always `null` on a successful `200` response.
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash curl
+curl -X GET http://localhost:3001/feed/664a1f2e8b3c2a001e4d7f01 \
+  -H "Accept: application/json"
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "data": {
+    "_id": "664a1f2e8b3c2a001e4d7f01",
+    "title": "El Gobierno aprueba el nuevo plan de vivienda",
+    "description": "El Consejo de Ministros ha dado luz verde al paquete de medidas para facilitar el acceso a la vivienda en las grandes ciudades.",
+    "author": "María López",
+    "link": "https://www.elpais.com/economia/2024-05-20/el-gobierno-aprueba-nuevo-plan-vivienda.html",
+    "portrait": "https://imagenes.elpais.com/resizer/vivienda-cover.jpg",
+    "newsletter": "El País",
+    "createdAt": "2024-05-20T08:34:22.000Z"
+  },
+  "error": null
+}
+```
+
+## Error Response (404)
+
+Returned when no document with the given `id` exists in MongoDB.
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Feed not found"
+  }
+}
+```
+
+## Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Feed item found and returned successfully |
+| `404` | No feed item exists with the provided ObjectId |
+| `500` | An unexpected server error occurred (e.g. malformed ObjectId cast failure) |

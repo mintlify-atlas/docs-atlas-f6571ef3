@@ -1,0 +1,264 @@
+---
+title: "Testing the DailyNews Backend with Jest and SuperTest"
+sidebarTitle: "Testing"
+description: "DailyNews backend tests cover the feed controller (integration), FeedService (unit), and both scraper repositories using Jest and SuperTest."
+---
+
+The DailyNews backend ships with a suite of automated tests written with [Jest](https://jestjs.io/) and [SuperTest](https://github.com/ladjs/supertest). The tests are split into four files that collectively cover the full request lifecycle — from HTTP routing through the service layer down to individual scraper parsers. No real network calls or database connections are made during testing: the MongoDB layer and the `fetch` API are fully mocked, so the suite runs entirely in-process and offline.
+
+## Test Structure
+
+<CardGroup cols={2}>
+  <Card title="feedController.test.ts" icon="bolt" href="#integration-test-example">
+    Integration tests that mount the real Express `app` and fire HTTP requests via SuperTest. Mocks `FeedService` entirely so no database or scraping logic runs.
+  </Card>
+  <Card title="FeedService.test.ts" icon="gear" href="#unit-test-example">
+    Unit tests for every public method on `FeedService`. Both `FeedRepositoryInterface` and `ScrapperService` are replaced with `jest.fn()` mocks.
+  </Card>
+  <Card title="ElPaisScrapperRepository.test.ts" icon="newspaper" href="#coverage">
+    Unit tests for the El País scraper. `global.fetch` is replaced with a Jest mock that returns hand-crafted HTML fixtures to verify CSS selector targeting.
+  </Card>
+  <Card title="ElMundoScrapperRepository.test.ts" icon="newspaper" href="#coverage">
+    Unit tests for the El Mundo scraper. Same fetch-mocking pattern, with a dedicated fixture for articles missing a `href` to verify that link-less entries are skipped.
+  </Card>
+</CardGroup>
+
+## Running Tests
+
+<CodeGroup>
+```bash npm
+npm run test
+```
+
+```bash jest (targeted)
+npx jest --testPathPattern=FeedService
+```
+</CodeGroup>
+
+Example output when all tests pass:
+
+```
+ PASS  src/tests/ElMundoScrapperRepository.test.ts
+ PASS  src/tests/ElPaisScrapperRepository.test.ts
+ PASS  src/tests/FeedService.test.ts
+ PASS  src/tests/feedController.test.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        ~3s
+```
+
+## Jest Configuration
+
+The project uses `ts-jest` so TypeScript source is compiled on-the-fly without a separate build step. Tests are discovered by matching `**/tests/**/*.test.ts` — i.e., any `.test.ts` file inside a `tests/` directory anywhere in the tree.
+
+```javascript
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  testMatch: ['**/tests/**/*.test.ts'],
+};
+```
+
+## Unit Test Example
+
+The `FeedService.test.ts` file demonstrates the standard mocking pattern used across the test suite. `FeedRepositoryInterface` is mocked with `jest.fn()` on every method, and `ScrapperService` is module-mocked at the top level so that `ScrapperService.prototype.getTopNews` can be controlled per-test.
+
+```typescript
+import { FeedService } from '../application/services/FeedService';
+import { FeedRepositoryInterface } from '../infrastructure/repositories/feed/FeedRepositoryInterface';
+import { ScrapperRepositoryInterface } from '../infrastructure/repositories/scrapper/ScrapperRepositoryInterface';
+import { ScrapperService } from '../application/services/ScrapperService';
+import { Feed } from '../domain/model/Feed';
+
+jest.mock('../application/services/ScrapperService');
+
+describe('FeedService', () => {
+  let feedService: FeedService;
+  let feedRepository: jest.Mocked<FeedRepositoryInterface>;
+  let scrappers: jest.Mocked<ScrapperRepositoryInterface>[];
+
+  beforeEach(() => {
+    feedRepository = {
+      findAll: jest.fn(),
+      create: jest.fn(),
+      findById: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      saveScrappedFeeds: jest.fn(),
+    } as any;
+
+    scrappers = [{ getTopNews: jest.fn() }];
+    feedService = new FeedService(feedRepository, scrappers);
+  });
+
+  describe('getAllFeeds', () => {
+    it('should scrap feeds and save them', async () => {
+      const scrappedFeeds = [{ title: 'Test Feed' } as Feed];
+      (ScrapperService.prototype.getTopNews as jest.Mock).mockResolvedValue(
+        scrappedFeeds
+      );
+      feedRepository.findAll.mockResolvedValue(scrappedFeeds);
+
+      const result = await feedService.getAllFeeds();
+
+      expect(ScrapperService.prototype.getTopNews).toHaveBeenCalled();
+      expect(feedRepository.saveScrappedFeeds).toHaveBeenCalledWith(
+        scrappedFeeds
+      );
+      expect(feedRepository.findAll).toHaveBeenCalled();
+      expect(result).toEqual(scrappedFeeds);
+    });
+  });
+
+  describe('getFeedById', () => {
+    it('should return null if feed not found', async () => {
+      feedRepository.findById.mockResolvedValue(null);
+
+      const result = await feedService.getFeedById('1');
+
+      expect(feedRepository.findById).toHaveBeenCalledWith('1');
+      expect(result).toBeNull();
+    });
+  });
+});
+```
+
+## Integration Test Example
+
+`feedController.test.ts` uses SuperTest to send real HTTP requests against the Express `app` instance. `FeedService` is mocked at the module level so the tests exercise routing, request parsing, and response formatting without touching the database or network.
+
+```typescript
+import request from 'supertest';
+import {
+  SERVER_CODES,
+  SERVER_MESSAGES,
+  SERVER_STATUS,
+} from '../api/apiConstants';
+import { Feed } from '../domain/model/Feed';
+import app from '../app';
+
+let feedsMock: Feed[] = [];
+let feedMock: Feed | null = {} as Feed;
+
+jest.mock('../application/services/FeedService', () => {
+  return {
+    FeedService: jest.fn().mockImplementation(() => {
+      return {
+        getAllFeeds: () => feedsMock,
+        getFeedById: () => feedMock,
+        createFeed: () => ({ ...feedMock, id: '1' }),
+        updateFeed: () => feedMock,
+        deleteFeed: () => feedMock,
+      };
+    }),
+  };
+});
+
+describe('FeedController', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('getAllFeeds', () => {
+    it('should return all feeds', async () => {
+      feedsMock = [
+        { title: 'Test Feed' } as Feed,
+        { title: 'Test Feed 2' } as Feed,
+      ];
+
+      const response = await request(app)
+        .get('/feed')
+        .expect(200, { data: feedsMock, error: null });
+
+      expect(response.status).toBe(SERVER_CODES.REQUEST_SUCCESSFUL);
+      expect(response.body.data).toEqual(feedsMock);
+    });
+  });
+
+  describe('getFeed', () => {
+    it('should return 404 if feed not found', async () => {
+      feedMock = null;
+
+      const response = await request(app)
+        .get('/feed/1')
+        .expect(404, {
+          data: null,
+          error: {
+            message: SERVER_MESSAGES.NOT_FOUND,
+            code: SERVER_STATUS.NOT_FOUND,
+          },
+        });
+
+      expect(response.status).toBe(SERVER_CODES.NOT_FOUND);
+    });
+  });
+
+  describe('createFeed', () => {
+    it('should return 400 if missing required fields', async () => {
+      feedMock = { title: 'New Feed' } as Feed;
+
+      const response = await request(app)
+        .post('/feed')
+        .send(feedMock)
+        .expect(400, {
+          data: null,
+          error: {
+            message: SERVER_MESSAGES.BAD_REQUEST,
+            code: SERVER_STATUS.BAD_REQUEST,
+          },
+        });
+
+      expect(response.status).toBe(SERVER_CODES.BAD_REQUEST);
+    });
+  });
+});
+```
+
+## Coverage
+
+The four test files collectively verify the following:
+
+<Accordion title="feedController.test.ts — HTTP routing and response shapes">
+  - `GET /feed` returns `200` with `{ data: Feed[], error: null }`
+  - `GET /feed/:id` returns `200` with the matched feed, or `404` when `getFeedById` returns `null`
+  - `POST /feed` returns `200` with the created feed, or `400` when `title` or `link` is missing from the body
+  - `PUT /feed/:id` returns `200` with the updated feed, or `404` when `updateFeed` returns `null`
+  - `DELETE /feed/:id` returns `204` on success, or `404` when `deleteFeed` returns `null`
+  - Any unregistered route returns `404`
+</Accordion>
+
+<Accordion title="FeedService.test.ts — service orchestration">
+  - `getAllFeeds` calls `ScrapperService.getTopNews`, passes the results to `saveScrappedFeeds`, and then calls `findAll`
+  - `createFeed` calls `feedRepository.create` with the correct payload
+  - `getFeedById` delegates to `findById` and propagates `null` when the feed does not exist
+  - `updateFeed` delegates to `repository.update` and propagates `null` for missing IDs
+  - `deleteFeed` delegates to `repository.delete` and propagates `null` for missing IDs
+</Accordion>
+
+<Accordion title="ElPaisScrapperRepository.test.ts — scraper parsing">
+  - `getTopNews` correctly extracts `title`, `description`, `author`, `link`, `portrait`, and `newsletter` from a mock HTML page containing `<article>` elements with El País's CSS class structure
+  - Returns an empty array when the HTML contains no `<article>` elements
+</Accordion>
+
+<Accordion title="ElMundoScrapperRepository.test.ts — scraper parsing">
+  - `getTopNews` correctly extracts all fields from El Mundo's CSS class structure (`ue-c-cover-content__byline-name`, `ue-c-cover-content__footer`, `ue-c-cover-content__image`)
+  - Skips articles where `header a[href]` is empty, returning an empty array for a page containing only link-less articles
+</Accordion>
+
+<Tip>
+  To run only a specific test file without executing the full suite, use Jest's `--testPathPattern` flag with any substring of the file name:
+
+  ```bash
+  npx jest --testPathPattern=ElPais
+  npx jest --testPathPattern=FeedService
+  npx jest --testPathPattern=feedController
+  ```
+
+  You can also use `--watch` mode during development to re-run matching tests automatically on every file save:
+
+  ```bash
+  npx jest --watch --testPathPattern=FeedService
+  ```
+</Tip>

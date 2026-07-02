@@ -1,0 +1,360 @@
+---
+title: "useFeedManagement and useDebounce Custom Hooks"
+sidebarTitle: "Hooks"
+description: "DailyNews provides two custom React hooks: useFeedManagement for all feed CRUD and search operations, and useDebounce for input debouncing."
+---
+
+DailyNews ships two custom React hooks that keep business logic out of component bodies and eliminate the need for Redux or any external state management library. `useFeedManagement` centralises every feed-related API call and the state it drives, so components stay focused on rendering. `useDebounce` is a small utility hook that delays a value update until the user pauses typing, preventing excessive network requests. Both hooks are fully typed with TypeScript and live in `src/customHooks/`.
+
+---
+
+## useFeedManagement
+
+`useFeedManagement` is the primary data hook for the application. It owns the full lifecycle of feed items — fetching the list, fetching a single item, creating, updating, deleting, and searching — and exposes the resulting state alongside each operation as a plain object. It uses `useToast()` to fire success and error notifications automatically, and `useNavigate()` to redirect to `/` after a successful feed creation.
+
+`useFeedManagement` is used by:
+- **`NewsList`** — calls `getAllFeeds`, `deleteFeed`, and `searchFeedsByTitle`
+- **`NewsDetail`** — calls `getFeedById`, `createFeed`, and `updateFeed`
+
+### State returned
+
+<ResponseField name="feeds" type="Feed[]">
+  The current list of feed items, updated by `getAllFeeds`, `searchFeedsByTitle`, and `deleteFeed`.
+</ResponseField>
+
+<ResponseField name="feedData" type="Feed">
+  The form state for a single feed item. Populated by `getFeedById` and mutated via `setFeedData`.
+</ResponseField>
+
+<ResponseField name="setFeedData" type="React.Dispatch<React.SetStateAction<Feed>>">
+  Direct state setter for `feedData`. Used by `NewsDetail` to update individual form fields.
+</ResponseField>
+
+<ResponseField name="loading" type="boolean">
+  `true` while any async operation is in flight; `false` otherwise.
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Holds the most recent error message string, or `null` when no error has occurred.
+</ResponseField>
+
+### Methods returned
+
+<ResponseField name="getAllFeeds" type="() => Promise<void>">
+  Fetches all feed items from `GET /feed` and writes them into `feeds`.
+</ResponseField>
+
+<ResponseField name="createFeed" type="(feed: Feed) => Promise<void>">
+  Posts a new feed item to `POST /feed`. On success, fires a `SUCCESS` toast and navigates to `/` after 1 second.
+</ResponseField>
+
+<ResponseField name="getFeedById" type="(id: string) => Promise<void>">
+  Fetches a single feed item from `GET /feed/:id` and writes it into `feedData`.
+</ResponseField>
+
+<ResponseField name="updateFeed" type="(id: string, updatedFeed: Partial<Feed>) => Promise<void>">
+  Sends updated fields to `PUT /feed/:id`. Fires a `SUCCESS` or `ERROR` toast on completion.
+</ResponseField>
+
+<ResponseField name="deleteFeed" type="(id: string) => Promise<void>">
+  Sends `DELETE /feed/:id`. On success fires a `SUCCESS` toast and removes the item from `feeds` locally without a refetch.
+</ResponseField>
+
+<ResponseField name="searchFeedsByTitle" type="(searchValue: string | null) => Promise<void>">
+  Posts `{ searchValue }` to `POST /feed/search` and replaces `feeds` with matching results. Does nothing when `searchValue` is `null`.
+</ResponseField>
+
+### Full hook source
+
+```typescript
+// src/customHooks/useFeedManagement.ts
+import { useState } from 'react';
+import { Feed } from '../utils/interfaces/Feed';
+import { ToastType, useToast } from '../context/ToastContext';
+import { useNavigate } from 'react-router-dom';
+import { apiEndpoints } from '../utils/apiConstants';
+
+const useFeedManagement = () => {
+  const navigate = useNavigate();
+  const { addToast } = useToast();
+  const [feeds, setFeeds] = useState<Feed[]>([]);
+  const [feedData, setFeedData] = useState<Feed>({
+    _id: null,
+    title: '',
+    description: '',
+    author: '',
+    link: '',
+    portrait: '',
+    newsletter: '',
+  });
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const getAllFeeds = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(apiEndpoints.getAllFeeds);
+      if (!response.ok) throw new Error('Failed to fetch news');
+      const { data } = await response.json();
+      setFeeds(data);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createFeed = async (feed: Feed) => {
+    setLoading(true);
+    try {
+      const response = await fetch(apiEndpoints.createFeed, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(feed),
+      });
+      if (!response.ok) throw new Error('Failed to create feed');
+      await response.json();
+      addToast('New created successfully', ToastType.SUCCESS);
+      setTimeout(() => { navigate('/'); }, 1000);
+    } catch (err) {
+      setError((err as Error).message);
+      addToast('New could not be created', ToastType.ERROR);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getFeedById = async (id: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(apiEndpoints.getFeedById(id));
+      if (!response.ok) throw new Error('Failed to fetch new');
+      const { data } = await response.json();
+      setFeedData(data);
+    } catch (err) {
+      setError((err as Error).message);
+      addToast('New could not be loaded', ToastType.ERROR);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateFeed = async (id: string, updatedFeed: Partial<Feed>) => {
+    setLoading(true);
+    try {
+      const response = await fetch(apiEndpoints.updateFeed(id), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: updatedFeed.title,
+          description: updatedFeed.description,
+          author: updatedFeed.author,
+          link: updatedFeed.link,
+          portrait: updatedFeed.portrait,
+          newsletter: updatedFeed.newsletter,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update new');
+      addToast('New updated successfully', ToastType.SUCCESS);
+    } catch (err) {
+      setError((err as Error).message);
+      addToast('New could not be updated', ToastType.ERROR);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteFeed = async (id: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(apiEndpoints.deleteFeed(id), {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete new');
+      addToast('Feed deleted successfully', ToastType.SUCCESS);
+      setFeeds(feeds.filter((feed) => feed._id !== id));
+    } catch (err) {
+      setError((err as Error).message);
+      addToast('New could not be deleted', ToastType.ERROR);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const searchFeedsByTitle = async (searchValue: string | null) => {
+    if (searchValue === null) return;
+    setLoading(true);
+    try {
+      const response = await fetch(apiEndpoints.searchFeedsByTitle, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ searchValue }),
+      });
+      if (!response.ok) throw new Error('Failed to find news');
+      const { data } = await response.json();
+      setFeeds(data);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return {
+    feeds, feedData, setFeedData, loading, error,
+    getAllFeeds, createFeed, getFeedById, updateFeed, deleteFeed, searchFeedsByTitle,
+  };
+};
+
+export default useFeedManagement;
+```
+
+### Usage example — NewsList
+
+```tsx
+// src/components/NewsList.tsx (excerpt)
+const NewsList: React.FC = () => {
+  const { getAllFeeds, feeds, deleteFeed, searchFeedsByTitle, loading } =
+    useFeedManagement();
+
+  useEffect(() => {
+    getAllFeeds();
+  }, []);
+
+  // Pass searchFeedsByTitle directly to NewsSearch as the onSearch callback
+  return (
+    <>
+      <NewsSearch onSearch={searchFeedsByTitle} />
+      {feeds?.map((feed) => (
+        // render each feed card...
+      ))}
+    </>
+  );
+};
+```
+
+<Note>
+  `useFeedManagement` internally calls `useToast()` and `useNavigate()`, so any component that uses it must be rendered inside both a `ToastProvider` and a React Router `BrowserRouter` context.
+</Note>
+
+---
+
+## useDebounce
+
+`useDebounce` delays propagating a value change until the user has stopped updating it for a specified number of milliseconds. It sets up a `setTimeout` inside a `useEffect` and clears it on every re-render, so the debounced value only updates after the input has been idle for `delay` ms. The hook accepts a generic-compatible signature via TypeScript: the return type matches the type of `value`.
+
+### Hook source
+
+```typescript
+// src/customHooks/useDebounce.ts
+import { useState, useEffect } from 'react';
+
+const useDebounce = (value: string | null, delay: number) => {
+  const [debounceValue, setDebounceValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebounceValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debounceValue;
+};
+
+export default useDebounce;
+```
+
+### Usage in NewsSearch — 500 ms delay
+
+```tsx
+// src/components/NewsSearch.tsx (excerpt)
+const NewsSearch: React.FC<NewsSearchProps> = ({ onSearch }) => {
+  const [searchValue, setSearchValue] = useState<string | null>(null);
+
+  // Only updates debounceValue after the user stops typing for 500 ms
+  const debounceValue = useDebounce(searchValue, 500);
+
+  useEffect(() => {
+    onSearch(debounceValue); // fires the API search call
+  }, [debounceValue]);
+
+  return (
+    <input
+      type="text"
+      placeholder="Search by title!"
+      value={searchValue ?? ''}
+      onChange={(e) => setSearchValue(e.target.value)}
+    />
+  );
+};
+```
+
+**How the debounce chain works:**
+
+1. User types a character → `searchValue` updates immediately.
+2. `useDebounce` schedules a 500 ms timer and cancels any previous pending timer.
+3. If no further input arrives within 500 ms, `debounceValue` is updated.
+4. The `useEffect` in `NewsSearch` fires with the new `debounceValue` and calls `onSearch`.
+5. `useFeedManagement.searchFeedsByTitle` sends the POST request to `/feed/search`.
+
+---
+
+## ToastContext
+
+`ToastContext` provides a lightweight, app-wide notification system. It is consumed through the `useToast()` hook and is available anywhere inside `<ToastProvider>`.
+
+### Using `useToast()`
+
+```tsx
+import { useToast, ToastType } from '../context/ToastContext';
+
+const MyComponent: React.FC = () => {
+  const { addToast } = useToast();
+
+  const handleSave = async () => {
+    try {
+      await saveData();
+      addToast('Saved successfully', ToastType.SUCCESS);
+    } catch {
+      addToast('Save failed', ToastType.ERROR);
+    }
+  };
+
+  return <button onClick={handleSave}>Save</button>;
+};
+```
+
+### ToastType enum
+
+```typescript
+export enum ToastType {
+  SUCCESS = 'success', // green notification
+  ERROR   = 'error',   // red notification
+  INFO    = 'info',    // rose notification
+}
+```
+
+### Context API
+
+<ResponseField name="toasts" type="Toast[]">
+  Array of currently active toast notifications. Each entry has `id: number`, `message: string`, and `type: ToastType`.
+</ResponseField>
+
+<ResponseField name="addToast" type="(message: string, type: ToastType) => void">
+  Adds a new toast to the queue. The toast is automatically removed after 3 seconds.
+</ResponseField>
+
+<ResponseField name="removeToast" type="(id: number) => void">
+  Manually removes a toast by its numeric `id`. Called internally by the auto-remove timer.
+</ResponseField>
+
+<Warning>
+  `useToast()` throws an error if called outside of a `ToastProvider`. Always ensure the component tree is wrapped in `<ToastProvider>` before using the hook — this is already done in `main.tsx` for the full application, but test files must wrap components manually.
+</Warning>

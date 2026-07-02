@@ -1,0 +1,261 @@
+---
+title: "DailyNews Feed Data Model and MongoDB Schema"
+sidebarTitle: "Data Model"
+description: "The Feed entity is the core data model in DailyNews. Explore the TypeScript interface, FeedDTO class, Mongoose ODM schema, and repository methods."
+---
+
+The `Feed` entity is the single data model that powers the entire DailyNews backend. It represents one news article — whether scraped automatically from El País or El Mundo, or created manually via the API. The domain definition lives in `src/domain/model/Feed.ts` and is expressed as both a TypeScript `interface` (for type-safety) and a `FeedDTO` class (for constructing new instances). The infrastructure layer maps this domain model to a Mongoose ODM schema in `src/infrastructure/repositories/feed/FeedODMModel.ts` and stores all articles in a single MongoDB collection named `feeds`.
+
+## Feed Interface
+
+The `Feed` interface defines the shape of a news article throughout the application. All service methods, repository methods, and controller handlers are typed against this interface.
+
+```typescript
+export interface Feed {
+  title: string;
+  description: string;
+  author: string;
+  link: string;
+  portrait: string | null;
+  newsletter: string;
+  createdAt: Date;
+}
+```
+
+## FeedDTO Class
+
+`FeedDTO` is the concrete implementation of `Feed` used when constructing new feed objects — particularly inside the scraper repositories. Its constructor accepts all fields except `createdAt`, which is automatically set to `new Date()` at construction time. The `toObject()` method returns a plain JavaScript object conforming to the `Feed` interface, suitable for passing to repository methods or returning from the API.
+
+```typescript
+export class FeedDTO implements Feed {
+  title: string;
+  description: string;
+  author: string;
+  link: string;
+  portrait: string | null;
+  newsletter: string;
+  createdAt: Date;
+
+  constructor(
+    title: string,
+    description: string,
+    author: string,
+    link: string,
+    portrait: string | null,
+    newsletter: string
+  ) {
+    this.title = title;
+    this.description = description;
+    this.author = author;
+    this.link = link;
+    this.portrait = portrait;
+    this.newsletter = newsletter;
+    this.createdAt = new Date();
+  }
+
+  toObject(): Feed {
+    return {
+      title: this.title,
+      description: this.description,
+      author: this.author,
+      link: this.link,
+      portrait: this.portrait,
+      newsletter: this.newsletter,
+      createdAt: this.createdAt,
+    };
+  }
+}
+```
+
+## Field Reference
+
+<ResponseField name="title" type="string" required>
+  The headline or title of the news article. Required for both scraped and manually created feeds. The `createFeed` controller endpoint validates its presence and returns `400 Bad Request` if it is missing.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  A short summary or teaser for the article. Defaults to an empty string in the Mongoose schema if not provided.
+</ResponseField>
+
+<ResponseField name="author" type="string">
+  The author or byline of the article. Defaults to an empty string if not available (common for scraped articles where the homepage does not expose an author element).
+</ResponseField>
+
+<ResponseField name="link" type="string" required>
+  The canonical URL of the full article. Used as the deduplication key in `saveScrappedFeeds()` — no two documents in the collection may share the same link.
+</ResponseField>
+
+<ResponseField name="portrait" type="string | null">
+  URL of the article's hero/thumbnail image. May be `null` when no image is found during scraping. Defaults to an empty string in the Mongoose schema.
+</ResponseField>
+
+<ResponseField name="newsletter" type="string">
+  The name of the news source that published the article (e.g., `"El País"` or `"El Mundo"`). For manually created feeds this field can be set to any string.
+</ResponseField>
+
+<ResponseField name="createdAt" type="Date">
+  Timestamp of when the document was inserted. Automatically set to `Date.now` by the Mongoose schema default; also set by `FeedDTO` at construction time.
+</ResponseField>
+
+## Mongoose ODM Model
+
+`FeedODMModel.ts` defines the Mongoose schema and exports the compiled model. The schema mirrors the `Feed` interface: `title` and `link` are plain `String` fields (effectively required by the controller's validation), while `description`, `author`, `portrait`, and `newsletter` are optional strings that default to empty strings. `createdAt` defaults to `Date.now`.
+
+```typescript
+import mongoose, { Schema } from 'mongoose';
+
+const FeedSchema = new Schema({
+  title: String,
+  description: {
+    type: String,
+    default: '',
+    required: false,
+  },
+  author: {
+    type: String,
+    default: '',
+    required: false,
+  },
+  link: String,
+  portrait: {
+    type: String,
+    default: '',
+    required: false,
+  },
+  newsletter: {
+    type: String,
+    default: '',
+    required: false,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+export const FeedODMModel = mongoose.model('Feed', FeedSchema);
+```
+
+## FeedRepositoryInterface
+
+`FeedRepositoryInterface` defines the contract for all database operations on the `Feed` collection. The `FeedRepository` class implements this interface, and the interface is also used as the type for the repository parameter injected into `FeedService`.
+
+```typescript
+import { Feed } from '../../../domain/model/Feed';
+
+export interface FeedRepositoryInterface {
+  saveScrappedFeeds(feed: Feed[]): Promise<Feed[]>;
+  findAll(): Promise<Feed[]>;
+  create(feed: {
+    title: string;
+    description: string;
+    author: string;
+    link: string;
+    portrait: string | null;
+    newsletter: string;
+  }): Promise<Feed>;
+  findById(id: string): Promise<Feed | null>;
+  findByTitle(title: string): Promise<Feed[]>;
+  update(id: string, feed: Partial<Feed>): Promise<Feed | null>;
+  delete(id: string): Promise<Feed | null>;
+}
+```
+
+| Method | Signature | Description |
+|---|---|---|
+| `saveScrappedFeeds` | `(feeds: Feed[]) => Promise<Feed[]>` | Deduplicates by `link` and inserts only new articles |
+| `findAll` | `() => Promise<Feed[]>` | Returns all articles sorted by `createdAt` descending |
+| `findById` | `(id: string) => Promise<Feed \| null>` | Looks up a single article by its MongoDB `_id` |
+| `findByTitle` | `(title: string) => Promise<Feed[]>` | Case-insensitive regex search on the `title` field |
+| `create` | `(feed: {...}) => Promise<Feed>` | Inserts a new article document |
+| `update` | `(id: string, feed: Partial<Feed>) => Promise<Feed \| null>` | Updates the article with the given `_id`, returns the new version |
+| `delete` | `(id: string) => Promise<Feed \| null>` | Removes the article with the given `_id` |
+
+## FeedRepository Implementation
+
+`FeedRepository` is the concrete Mongoose implementation of `FeedRepositoryInterface`. Notable implementation details:
+
+- **`findAll()`** chains `.sort({ createdAt: -1 })` and `.lean()` to return plain objects sorted newest-first.
+- **`findByTitle()`** builds a `RegExp` with the `i` flag for case-insensitive title search and also sorts by `createdAt` descending.
+- **`update()`** passes `{ new: true }` to `findByIdAndUpdate` so the updated document (not the original) is returned.
+- **`saveScrappedFeeds()`** uses a `Set<string>` of existing links to filter the input array before calling `insertMany`, avoiding duplicate key errors.
+
+```typescript
+import { Feed } from '../../../domain/model/Feed';
+import { FeedODMModel as FeedModel } from './FeedODMModel';
+import { FeedRepositoryInterface } from './FeedRepositoryInterface';
+
+export class FeedRepository implements FeedRepositoryInterface {
+  async saveScrappedFeeds(feeds: Feed[]): Promise<Feed[]> {
+    const existingFeeds = await FeedModel.find({
+      link: { $in: feeds.map((feed) => feed.link) },
+    }).lean();
+    const existingLinks = new Set(existingFeeds.map((feed) => feed.link));
+    const newFeeds: Feed[] = feeds.filter(
+      (feed) => !existingLinks.has(feed.link)
+    );
+
+    if (newFeeds.length > 0) {
+      await FeedModel.insertMany(newFeeds);
+    }
+
+    return newFeeds;
+  }
+
+  async findAll(): Promise<Feed[]> {
+    const feeds = await FeedModel.find().sort({ createdAt: -1 }).lean();
+    return [...feeds] as Feed[];
+  }
+
+  async create(feed: {
+    title: string;
+    description: string;
+    author: string;
+    link: string;
+    portrait: string | null;
+    newsletter: string;
+  }): Promise<Feed> {
+    const createdFeed = await FeedModel.create(feed);
+    return createdFeed.toObject() as Feed;
+  }
+
+  async findById(id: string): Promise<Feed | null> {
+    const feed = await FeedModel.findById(id).lean();
+    if (feed) {
+      return { ...feed } as Feed;
+    }
+    return null;
+  }
+
+  async findByTitle(title: string): Promise<Feed[]> {
+    const feeds = await FeedModel.find({
+      title: { $regex: new RegExp(title, 'i') },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    return [...feeds] as Feed[];
+  }
+
+  async update(id: string, feed: Partial<Feed>): Promise<Feed | null> {
+    const updatedFeed = await FeedModel.findByIdAndUpdate(id, feed, {
+      new: true,
+    }).lean();
+    if (updatedFeed) {
+      return { ...updatedFeed } as Feed;
+    }
+    return null;
+  }
+
+  async delete(id: string): Promise<Feed | null> {
+    const deletedFeed = await FeedModel.findByIdAndDelete(id);
+    if (deletedFeed) {
+      return { ...deletedFeed } as Feed;
+    }
+    return null;
+  }
+}
+```
+
+<Note>
+  All news articles — whether scraped automatically from El País and El Mundo or created manually via `POST /feed` — are stored in the same MongoDB `feeds` collection. This single-collection design keeps the data model and query logic simple. If you need to separate sources in the future, consider adding an indexed `source` field or using separate collections per newsletter.
+</Note>

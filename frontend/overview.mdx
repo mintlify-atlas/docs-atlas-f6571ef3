@@ -1,0 +1,130 @@
+---
+title: "DailyNews Frontend: React 18 with Vite and Tailwind"
+sidebarTitle: "Overview"
+description: "The DailyNews frontend is a React 18 single-page app built with Vite, TypeScript, Tailwind CSS, and React Router v7, featuring real-time search and dark mode."
+---
+
+The DailyNews frontend is a React 18 single-page application that presents a curated news feed to the user. It communicates with the DailyNews backend REST API to fetch, create, update, and delete feed items. The app is bundled by Vite, typed with TypeScript, styled with Tailwind CSS, and navigated with React Router v7. A global `ToastContext` delivers in-app notifications without any external state management library, and a floating `MultiTool` button gives quick access to feed creation and dark mode toggling from every page.
+
+## Tech Stack
+
+<CardGroup cols={2}>
+  <Card title="React 18" icon="react" href="https://react.dev">
+    Component-based UI library. Uses `createRoot` and `StrictMode` for concurrent-ready rendering.
+  </Card>
+  <Card title="Vite" icon="bolt" href="https://vitejs.dev">
+    Lightning-fast dev server and build tool. Configured on port 3000 with `@vitejs/plugin-react`.
+  </Card>
+  <Card title="TypeScript" icon="code" href="https://www.typescriptlang.org">
+    Full static typing across components, hooks, contexts, and utility modules.
+  </Card>
+  <Card title="Tailwind CSS" icon="palette" href="https://tailwindcss.com">
+    Utility-first CSS framework with `darkMode: 'class'` for togglable dark mode.
+  </Card>
+  <Card title="React Router v7" icon="route" href="https://reactrouter.com">
+    Declarative client-side routing via `BrowserRouter`, `Routes`, and `Route`.
+  </Card>
+  <Card title="Jest + React Testing Library" icon="vial" href="https://testing-library.com/docs/react-testing-library/intro">
+    Unit and integration tests with `jest-environment-jsdom` and `ts-jest`.
+  </Card>
+</CardGroup>
+
+## Project Structure
+
+The entire application source lives under `frontend/src/`. Each subdirectory has a focused responsibility:
+
+```
+frontend/src/
+├── components/          # Page-level smart components (NewsHome, NewsList, NewsDetail, NewsSearch, NotFound)
+├── ui/                  # Reusable presentational primitives (Header, Modal, MultiTool, Toast)
+├── customHooks/         # Encapsulated stateful logic (useFeedManagement, useDebounce)
+├── context/             # React context providers (ToastContext)
+├── utils/
+│   ├── apiConstants.ts  # Base URL and all API endpoint definitions
+│   ├── commonUtils.ts   # Shared helper functions (e.g. getNewsLetterPage)
+│   └── interfaces/
+│       └── Feed.ts      # TypeScript Feed interface shared across the app
+├── icons/               # SVG icon components (LogoIcon, EditIcon, DeleteIcon, etc.)
+├── test/                # Jest + RTL test files and __mocks__
+├── main.tsx             # App entry point — router, providers, root render
+└── index.css            # Global Tailwind base styles
+```
+
+## Routing
+
+Routes are declared in `src/main.tsx` using React Router v7's `<Routes>` and `<Route>` components. The `<Header>` and `<MultiTool>` components are rendered outside the route tree so they remain mounted on every page.
+
+| Path | Component | Description |
+|---|---|---|
+| `/` | `NewsHome` | Main feed — displays the hero heading and the full `<NewsList />` |
+| `/new/:id` | `NewsDetail` | Edit an existing feed item identified by `:id` |
+| `/add` | `NewsDetail` | Create a brand-new feed item (no `:id` param) |
+| `*` | `NotFound` | 404 catch-all rendered for any unmatched path |
+
+```tsx
+<Routes>
+  <Route path="/" element={<NewsHome />} />
+  <Route path="/new/:id" element={<NewsDetail />} />
+  <Route path="/add" element={<NewsDetail />} />
+  <Route path="*" element={<NotFound />} />
+</Routes>
+```
+
+## API Configuration
+
+All API endpoint strings are centralised in `src/utils/apiConstants.ts`. The base URL is read from the `VITE_BACKEND_BASE_URI` environment variable at build time. During local development a hardcoded fallback points to `http://localhost:3001/feed`.
+
+```typescript
+// src/utils/apiConstants.ts
+// const baseUrl = import.meta.env.VITE_BACKEND_BASE_URI;
+const baseUrl = 'http://localhost:3001/feed';
+
+export const apiEndpoints = {
+  getAllFeeds: baseUrl,
+  createFeed: baseUrl,
+  searchFeedsByTitle: `${baseUrl}/search`,
+  getFeedById: (id: string) => `${baseUrl}/${id}`,
+  updateFeed: (id: string) => `${baseUrl}/${id}`,
+  deleteFeed: (id: string) => `${baseUrl}/${id}`,
+};
+```
+
+<Note>
+  To point the frontend at a remote backend, create a `.env` file in the `frontend/` directory and set `VITE_BACKEND_BASE_URI=https://your-api-host/feed`, then uncomment the first line in `apiConstants.ts`.
+</Note>
+
+## Global State
+
+The app intentionally avoids Redux or any third-party state library. The only globally shared state is the toast notification queue, provided by `ToastContext`:
+
+- **`ToastProvider`** — wraps the entire application in `main.tsx` and holds the `toasts` array in local `useState`.
+- **`useToast()`** — hook that exposes `{ toasts, addToast, removeToast }` to any component in the tree.
+- **`addToast(message, type)`** — schedules a toast and automatically removes it after 3 seconds.
+
+All other state (feed list, form data, loading flags) lives inside `useFeedManagement` and is scoped to the component that calls the hook.
+
+## Dark Mode
+
+Dark mode is implemented with Tailwind's `darkMode: 'class'` strategy. Toggling dark mode adds or removes the `dark` class on `document.body`. The `MultiTool` component's dark-mode button calls `document.body.classList.toggle('dark')` and flips a local `dark` boolean to switch its icon between a moon and a sun.
+
+All Tailwind dark-mode variants (e.g. `dark:bg-gray-800`, `dark:text-gray-100`) throughout the component tree react automatically once the class is present on `<body>`.
+
+## Running the Frontend
+
+<CodeGroup>
+
+```bash Development server
+npm run dev
+```
+
+```bash Production build
+npm run build
+```
+
+```bash Preview production build
+npm run preview
+```
+
+</CodeGroup>
+
+The development server starts on **port 3000** (`server.port` in `vite.config.ts`). The preview server also runs on port 3000 with `strictPort: true`, so make sure that port is free before running either command.
