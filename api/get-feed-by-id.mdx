@@ -1,7 +1,7 @@
 ---
-title: "GET /feed/:id — Retrieve a Single News Item"
+title: "GET /feed/:id — Retrieve a Single News Feed Item by ID"
 sidebarTitle: "GET /feed/:id"
-description: "GET /feed/:id returns a single news feed item from MongoDB by its ObjectId. Returns 404 if the item does not exist."
+description: "GET /feed/:id returns a single news feed item from MongoDB by its ObjectId. Returns 404 if the item does not exist and 500 for a malformed ID."
 ---
 
 `GET /feed/:id` retrieves one news feed item from MongoDB using its unique ObjectId. Unlike `GET /feed`, this endpoint does not trigger any scraping — it is a direct database lookup. If no document matches the provided `id`, the server responds with `404` and the `NOT_FOUND` error envelope.

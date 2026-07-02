@@ -1,7 +1,7 @@
 ---
-title: "POST /feed/search — Search News by Title"
+title: "POST /feed/search — Search News Feed Items by Title"
 sidebarTitle: "POST /feed/search"
-description: "POST /feed/search performs a case-insensitive title substring search on stored news feed items and returns the matching array."
+description: "POST /feed/search performs a case-insensitive title substring search on stored news feed items and returns all matching documents sorted newest-first."
 ---
 
 `POST /feed/search` searches stored news feed items by title and returns every document whose `title` field contains the given substring. The match is case-insensitive and implemented as a MongoDB `$regex` query (`new RegExp(searchValue, 'i')`), so partial matches are returned — searching for `"mad"` will match `"Madrid"`, `"Madrigal"`, and `"Real Madrid"`. Results are sorted by `createdAt` descending. This endpoint searches only documents already stored in MongoDB; it does not trigger a live scrape.

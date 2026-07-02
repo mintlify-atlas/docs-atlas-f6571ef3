@@ -103,8 +103,13 @@ DailyNews/
 │   └── package.json
 ├── frontend/
 │   ├── src/
-│   │   ├── components/            # Reusable React components
-│   │   ├── pages/                 # Route-level views
+│   │   ├── components/            # Page-level React components (NewsHome, NewsList, NewsDetail, NewsSearch)
+│   │   ├── context/               # React context providers (ToastContext)
+│   │   ├── customHooks/           # Shared hooks (useDebounce, useFeedManagement)
+│   │   ├── icons/                 # Inline SVG icon components
+│   │   ├── ui/                    # Reusable UI primitives (Header, Modal, Toast, MultiTool)
+│   │   ├── utils/                 # API constants, helpers, and shared interfaces
+│   │   ├── test/                  # Jest + React Testing Library test suites
 │   │   └── main.tsx               # Vite entry point
 │   ├── Dockerfile
 │   └── package.json

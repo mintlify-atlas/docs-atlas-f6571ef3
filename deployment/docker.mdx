@@ -1,5 +1,5 @@
 ---
-title: "Deploy DailyNews with Docker Compose"
+title: "Deploy DailyNews with Docker Compose on Any Machine"
 sidebarTitle: "Docker"
 description: "Run DailyNews frontend, backend, and MongoDB in isolated Docker containers using Docker Compose, with persistent MongoDB storage and live volume mounts."
 ---
@@ -23,13 +23,13 @@ docker compose version
 ## Services Overview
 
 <CardGroup cols={3}>
-  <Card title="frontend" icon="browser" href="/quickstart">
+  <Card title="frontend" icon="browser" href="/deployment/docker#frontend-dockerfile">
     React/Vite application served by `serve`. Exposed on **port 3000** and depends on the `backend` service. The `./frontend` directory is mounted for live development.
   </Card>
-  <Card title="backend" icon="server" href="/quickstart">
+  <Card title="backend" icon="server" href="/deployment/docker#backend-dockerfile">
     Node.js/Express REST API compiled from TypeScript. Exposed on **port 3001**, depends on `mongo`, and reads environment variables from the root `.env` file.
   </Card>
-  <Card title="mongo" icon="database" href="/quickstart">
+  <Card title="mongo" icon="database" href="/deployment/docker#volume-mounts">
     Official MongoDB image. Exposed on **port 27017** with a named volume `mongo_data` that persists your database between container restarts.
   </Card>
 </CardGroup>
@@ -142,6 +142,24 @@ docker-compose up --watch
 ```
 
 </CodeGroup>
+
+## npm Scripts
+
+The `backend/package.json` includes four convenience scripts that wrap the raw `docker-compose` commands. Run these from the `backend/` directory:
+
+| Script | Command | Description |
+|---|---|---|
+| `npm run docker:build` | `docker-compose build` | Build (or rebuild) all service images without starting containers. |
+| `npm run docker:up` | `docker-compose up --watch` | Start all services in watch mode — Compose re-syncs files on change. |
+| `npm run docker:down` | `docker-compose down` | Stop and remove all containers; the `mongo_data` volume is preserved. |
+| `npm run docker:restart` | `docker-compose down && docker-compose up --build` | Tear down then rebuild and restart everything from scratch. |
+
+```bash
+# From the backend/ directory
+npm run docker:up        # start stack with watch mode
+npm run docker:down      # stop stack
+npm run docker:restart   # full rebuild and restart
+```
 
 ## Volume Mounts
 

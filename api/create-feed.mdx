@@ -1,7 +1,7 @@
 ---
-title: "POST /feed — Create a New News Item"
+title: "POST /feed — Create a New News Feed Item in MongoDB"
 sidebarTitle: "POST /feed"
-description: "POST /feed creates a new news feed item in MongoDB. Requires title and link fields; returns the created Feed object."
+description: "POST /feed creates a new news feed item in MongoDB. Both title and link are required; omitting either returns a 400 Bad Request with no database write."
 ---
 
 `POST /feed` creates a new news feed item and persists it to MongoDB. This is the manual creation path — use it to add custom feed entries independently of the automatic scraping pipeline. The controller performs soft validation: if either `title` or `link` is absent from the request body, the server immediately responds with `400 BAD_REQUEST` without touching the database.

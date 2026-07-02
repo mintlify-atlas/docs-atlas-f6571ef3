@@ -39,7 +39,7 @@ This page walks you through getting the entire DailyNews stack — React fronten
     Clone the DailyNews repository and navigate into the project root:
 
     ```bash
-    git clone git@github.com:miikorz/DailyNews.git
+    git clone https://github.com/miikorz/DailyNews.git
     cd DailyNews
     ```
   </Step>
@@ -100,31 +100,34 @@ This page walks you through getting the entire DailyNews stack — React fronten
     curl http://localhost:3001/feed
     ```
 
-    The response is a JSON array of `Feed` objects. Each item matches the `Feed` interface defined in `backend/src/domain/model/Feed.ts`:
+    The response is a JSON object with a `data` array of `Feed` objects and an `error` field. Each item in `data` matches the `Feed` interface defined in `backend/src/domain/model/Feed.ts`, with `_id` added by MongoDB:
 
     ```json
-    [
-      {
-        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
-        "title": "Ejemplo de titular extraído de El País",
-        "description": "Breve descripción del artículo tal como aparece en la portada.",
-        "author": "Nombre Apellido",
-        "link": "https://elpais.com/seccion/2024-01-15/articulo.html",
-        "portrait": "https://imagenes.elpais.com/resizer/abc123.jpg",
-        "newsletter": "El País",
-        "createdAt": "2024-01-15T10:30:00.000Z"
-      },
-      {
-        "_id": "64f1a2b3c4d5e6f7a8b9c0d2",
-        "title": "Titular scrapeado de El Mundo",
-        "description": "",
-        "author": "",
-        "link": "https://www.elmundo.es/seccion/articulo.html",
-        "portrait": null,
-        "newsletter": "El Mundo",
-        "createdAt": "2024-01-15T10:30:00.000Z"
-      }
-    ]
+    {
+      "data": [
+        {
+          "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+          "title": "Ejemplo de titular extraído de El País",
+          "description": "Breve descripción del artículo tal como aparece en la portada.",
+          "author": "Nombre Apellido",
+          "link": "https://elpais.com/seccion/2024-01-15/articulo.html",
+          "portrait": "https://imagenes.elpais.com/resizer/abc123.jpg",
+          "newsletter": "El País",
+          "createdAt": "2024-01-15T10:30:00.000Z"
+        },
+        {
+          "_id": "64f1a2b3c4d5e6f7a8b9c0d2",
+          "title": "Titular scrapeado de El Mundo",
+          "description": "",
+          "author": "",
+          "link": "https://www.elmundo.es/seccion/articulo.html",
+          "portrait": null,
+          "newsletter": "El Mundo",
+          "createdAt": "2024-01-15T10:30:00.000Z"
+        }
+      ],
+      "error": null
+    }
     ```
 
     <Note>

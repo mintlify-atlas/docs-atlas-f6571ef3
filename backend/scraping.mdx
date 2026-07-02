@@ -143,7 +143,7 @@ export class ElMundoScrapperRepository implements ScrapperRepositoryInterface {
         const author: string = $(el)
           .find('span.ue-c-cover-content__byline-name')
           .text()
-          .replace('Redacci\u{F3}n: ', '');
+          .replace('Redacci\uFFFDn: ', '');
         const description: string = $(el)
           .find('div.ue-c-cover-content__footer')
           .text();

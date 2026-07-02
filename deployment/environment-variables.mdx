@@ -1,5 +1,5 @@
 ---
-title: "DailyNews Environment Variable Reference"
+title: "DailyNews Environment Variables: Backend and Frontend Ref"
 sidebarTitle: "Environment Variables"
 description: "All environment variables for the DailyNews backend and frontend, including PORT, MONGO_URI, and VITE_BACKEND_BASE_URI with example values and usage."
 ---
@@ -29,9 +29,11 @@ These variables are consumed by `backend/src/server.ts` (for `PORT`) and `backen
 Vite only exposes variables that are prefixed with `VITE_` to the client-side bundle. These are read at **build time** via `import.meta.env` — not at runtime — so the container must be rebuilt after changing them.
 
 <ParamField body="VITE_BACKEND_BASE_URI" type="string" required>
-  Base URL of the backend feed endpoint. Used by `frontend/src/utils/apiConstants.ts` to construct all API endpoint paths (`getAllFeeds`, `createFeed`, `searchFeedsByTitle`, etc.).
+  Base URL of the backend feed endpoint, intended for use in `frontend/src/utils/apiConstants.ts` to construct all API endpoint paths (`getAllFeeds`, `createFeed`, `searchFeedsByTitle`, etc.).
 
   The `VITE_` prefix is mandatory for Vite to include this variable in the client bundle. Variables without this prefix are stripped from the build and will be `undefined` in the browser.
+
+  **Note:** The line that reads this variable in `apiConstants.ts` is currently commented out and the URL is hardcoded. The variable has no effect until that file is updated. See the warning at the bottom of this page for details.
 
   **Example:** `VITE_BACKEND_BASE_URI=http://localhost:3001/feed`
 </ParamField>
@@ -59,7 +61,6 @@ MONGO_URI=mongodb://localhost:27017/feed-db
 Consumed by Vite at build time. The repository ships this file with the following content:
 
 ```bash
-# frontend/.env
 VITE_BACKEND_BASE_URI=http://localhost:3001/feed
 ```
 
